@@ -138,7 +138,7 @@ async function scrapeOne(browser, district) {
     const respUrl = resp.url();
     const ct = resp.headers()['content-type'] || '';
     if (!ct.includes('json')) return;
-    if (!respUrl.includes('uber')) return;
+    // Capture all JSON — Uber uses cn-geo1.uber.com, api.uber.com, etc.
     capturedUrls.push(respUrl);
     try {
       const text = await resp.text();
@@ -184,8 +184,30 @@ async function scrapeOne(browser, district) {
         lastError = `HTTP ${status} (blocked)`;
         continue;
       }
-      // Give SPA time to fire XHR/fetch calls
-      await new Promise(r => setTimeout(r, 5000));
+
+      // Page loaded — now click "See prices" to trigger the estimate API
+      await new Promise(r => setTimeout(r, 2000)); // wait for hydration
+
+      const clicked = await page.evaluate(() => {
+        // Find button by visible text
+        const btns = [...document.querySelectorAll('button, [role="button"], a')];
+        const target = btns.find(b => /see prices|get estimate|查看價格|估算/i.test(b.textContent));
+        if (target) { target.click(); return target.textContent.trim(); }
+        return null;
+      });
+
+      if (DEBUG) console.log(`  [click] button found: ${clicked}`);
+      if (!clicked) {
+        // Try submitting the form directly if button not found
+        await page.evaluate(() => {
+          const form = document.querySelector('form');
+          if (form) form.submit();
+        });
+        if (DEBUG) console.log('  [click] no button, tried form submit');
+      }
+
+      // Wait for the price estimate API response to arrive
+      await new Promise(r => setTimeout(r, 6000));
       loaded = true;
       break;
     } catch (e) {
@@ -210,13 +232,19 @@ async function scrapeOne(browser, district) {
 
       const smMatch  = all.match(/"?surge_multiplier"?\s*[=:]\s*([\d.]+)/);
       const surgeX   = text.match(/(\d+\.\d+)\s*[x×X×]/i);
+      // HK$ price range: "HK$45", "HK$45-60", "HK$45 – HK$60"
       const hkPrice  = text.match(/HK\$\s*(\d+(?:\.\d+)?)/);
       const lowEst   = all.match(/"low_estimate"\s*:\s*([\d.]+)/);
+      // Upfront fare format
+      const upfront  = all.match(/"upfront_fare_enabled"\s*:\s*true/);
+      const fareVal  = all.match(/"fare_value"\s*:\s*([\d.]+)/);
 
       return {
         surge: smMatch  ? parseFloat(smMatch[1])  : (surgeX ? parseFloat(surgeX[1]) : null),
-        price: lowEst   ? parseFloat(lowEst[1])   : (hkPrice ? parseFloat(hkPrice[1]) : null),
-        snippet: text.slice(0, 300).replace(/\s+/g, ' '),
+        price: lowEst   ? parseFloat(lowEst[1])
+             : fareVal  ? parseFloat(fareVal[1])
+             : hkPrice  ? parseFloat(hkPrice[1]) : null,
+        snippet: text.slice(0, 400).replace(/\s+/g, ' '),
       };
     });
     domSurge = r.surge;

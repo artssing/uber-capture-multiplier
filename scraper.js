@@ -156,79 +156,92 @@ async function pushSurgeJson(payload) {
 
 // ── Fill Uber price estimate form ─────────────────────────────────────────────
 async function fillUberForm(page, district) {
+  // Selectors confirmed from debug output (aria-labels in zh-TW locale)
+  const PICKUP_LABELS  = ['取車地點', 'Pickup location', 'Enter pickup location'];
+  const DROPOFF_LABELS = ['下車地點', 'Dropoff location', 'Enter destination'];
+
+  // Build a CSS selector that matches any of the aria-labels
+  function labelSel(labels) {
+    return labels.map(l => `[aria-label="${l}"]`).join(', ');
+  }
+
   if (DEBUG) {
     const inputs = await page.evaluate(() =>
       [...document.querySelectorAll('input')].filter(el => el.offsetParent !== null).map(el => ({
-        ph: el.placeholder, label: el.getAttribute('aria-label'), id: el.id, val: el.value,
+        label: el.getAttribute('aria-label'), id: el.id, val: el.value,
       }))
     );
     console.log('  [inputs]', JSON.stringify(inputs));
   }
 
-  // Use known aria-labels (discovered from debug output); fall back to position
-  async function findInput(labelPatterns) {
-    // Try aria-label selector first
-    for (const pat of labelPatterns) {
-      const el = await page.$(`[aria-label="${pat}"]`);
-      if (el) return el;
+  async function typeAndPick(labelSels, text) {
+    // Use page.focus() to activate the field without relying on click coordinates
+    try {
+      await page.focus(labelSels);
+    } catch (_) {
+      // If focus fails, try JS-based focus as fallback
+      await page.evaluate((sel) => {
+        const el = document.querySelector(sel);
+        if (el) { el.focus(); el.click(); }
+      }, labelSels.split(',')[0].trim());
+      await new Promise(r => setTimeout(r, 300));
     }
-    // Fallback: nth visible input
-    const allInputs = await page.$$('input');
-    const visible = [];
-    for (const h of allInputs) {
-      const v = await h.evaluate(el => el.offsetParent !== null && el.type !== 'hidden');
-      if (v) visible.push(h);
-      if (visible.length === 2) break;
-    }
-    return labelPatterns.includes('取車地點') ? visible[0] : visible[1];
-  }
 
-  async function typeAndPick(handle, text) {
-    if (!handle) { console.log(`  [form] input not found for "${text}"`); return; }
-    // Triple-click selects existing text, then typing replaces it
-    await handle.click({ clickCount: 3 });
-    await handle.type(text, { delay: 70 });
+    // Select-all then type (works cross-platform: focus puts cursor in field)
+    await page.keyboard.down('Meta');  // Command on Mac / treated as Ctrl elsewhere
+    await page.keyboard.press('a');
+    await page.keyboard.up('Meta');
+    await page.keyboard.press('Backspace');
+    await page.keyboard.type(text, { delay: 70 });
     if (DEBUG) console.log(`  [type] "${text}"`);
 
-    // Wait for pudoLocationSearch to respond and dropdown to render
+    // Wait for pudoLocationSearch API to respond & dropdown to render
     await new Promise(r => setTimeout(r, 2500));
 
-    // Click first autocomplete suggestion
+    // Log what dropdown options appeared
+    if (DEBUG) {
+      const opts = await page.evaluate(() =>
+        [...document.querySelectorAll('[role="option"],[role="listitem"],[data-index]')]
+          .map(el => el.textContent.trim().slice(0, 60))
+      );
+      console.log(`  [dropdown] ${opts.length} options:`, opts.slice(0, 3));
+    }
+
+    // Click first suggestion
     const picked = await page.evaluate(() => {
-      const opts = [...document.querySelectorAll(
-        '[role="option"], [role="listitem"], [data-testid*="suggestion"], li[id*="option"]'
-      )];
-      if (opts.length > 0) { opts[0].click(); return opts[0].textContent.trim().slice(0, 60); }
+      const candidates = [
+        ...(document.querySelectorAll('[role="option"]')),
+        ...(document.querySelectorAll('[role="listitem"]')),
+        ...(document.querySelectorAll('[data-index="0"]')),
+      ];
+      const first = candidates.find(el => el.textContent.trim().length > 0);
+      if (first) { first.click(); return first.textContent.trim().slice(0, 60); }
       return null;
     });
 
     if (picked) {
       if (DEBUG) console.log(`  [autocomplete] clicked: "${picked}"`);
     } else {
-      // Fallback: arrow key + enter
       await page.keyboard.press('ArrowDown');
       await new Promise(r => setTimeout(r, 400));
       await page.keyboard.press('Enter');
       if (DEBUG) console.log('  [autocomplete] ArrowDown+Enter fallback');
     }
-    await new Promise(r => setTimeout(r, 800));
+    await new Promise(r => setTimeout(r, 1000));
   }
 
-  const pickupHandle = await findInput(['取車地點', 'Pickup location', 'Enter pickup location']);
-  const dropoffHandle = await findInput(['下車地點', 'Dropoff location', 'Enter destination']);
+  await typeAndPick(labelSel(PICKUP_LABELS),  district.en);
+  await typeAndPick(labelSel(DROPOFF_LABELS), DROPOFF.en);
 
-  await typeAndPick(pickupHandle, district.en);
-  await typeAndPick(dropoffHandle, DROPOFF.en);
-
-  // Click "See prices" / submit
+  // Click "See prices" / submit button
   const clicked = await page.evaluate(() => {
-    const candidates = [
+    const btns = [
       document.querySelector('button[data-testid*="submit"]'),
       document.querySelector('button[type="submit"]'),
       ...[...document.querySelectorAll('button,[role="button"]')]
         .filter(b => /see prices|get estimate|查看|確認|估價/i.test(b.textContent)),
     ].filter(Boolean);
-    if (candidates[0]) { candidates[0].click(); return candidates[0].textContent.trim().slice(0, 40); }
+    if (btns[0]) { btns[0].click(); return btns[0].textContent.trim().slice(0, 40); }
     return null;
   });
   if (DEBUG) console.log(`  [submit] ${clicked || 'no button found'}`);

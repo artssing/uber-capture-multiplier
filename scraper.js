@@ -63,17 +63,37 @@ const COMMON_ARGS = [
   '--disable-dev-shm-usage',
   '--disable-blink-features=AutomationControlled',
   '--lang=zh-HK',
+  '--window-size=420,700',
+  '--window-position=30,30',
 ];
 
-function launchOpts(headless) {
+// Prefer the real system Chrome over Puppeteer's bundled Chromium —
+// real Chrome has a genuine browser fingerprint that passes bot detection.
+function getChromePath() {
+  const candidates = [
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', // macOS
+    '/usr/bin/google-chrome',                                        // Linux
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+  ];
+  return candidates.find(p => fs.existsSync(p));
+}
+
+function launchOpts(forSetup = false) {
+  const executablePath = getChromePath();
+  if (executablePath) {
+    console.log(`[browser] Using system Chrome: ${executablePath}`);
+  } else {
+    console.log('[browser] System Chrome not found — using bundled Chromium (may trigger bot detection)');
+  }
   return {
-    headless,
-    userDataDir: PROFILE_DIR,   // <── persists login across restarts
+    headless: false,          // Always non-headless: Uber detects headless fingerprints
+    executablePath,           // Real Chrome = real fingerprint
+    userDataDir: PROFILE_DIR,
     ignoreHTTPSErrors: true,
-    args: headless
-      ? COMMON_ARGS
-      : [...COMMON_ARGS, '--window-size=430,900'],
-    defaultViewport: headless ? { width:1280, height:800 } : null,
+    args: COMMON_ARGS,
+    defaultViewport: forSetup ? null : { width:1280, height:800 },
   };
 }
 
@@ -82,10 +102,9 @@ async function runSetup() {
   console.log('\n╔══════════════════════════════════════════════════════════╗');
   console.log('║  SETUP MODE                                               ║');
   console.log('╠══════════════════════════════════════════════════════════╣');
-  console.log('║  1. A browser window will open                           ║');
+  console.log('║  1. A Chrome window will open (real browser, not hidden) ║');
   console.log('║  2. Log in to your Uber account                          ║');
-  console.log('║  3. Navigate to the price estimator — confirm prices     ║');
-  console.log('║     show (e.g. HK$45–55)                                 ║');
+  console.log('║  3. Wait until prices show (e.g. HK$45–55)              ║');
   console.log('║  4. Press ENTER here — profile saved, browser closes     ║');
   console.log('╚══════════════════════════════════════════════════════════╝\n');
 
@@ -379,6 +398,8 @@ if (SETUP_MODE) {
     process.exit(1);
   }
   console.log(`Map:  https://${GITHUB_OWNER}.github.io/${GITHUB_REPO}/`);
+  console.log(`Note: Chrome windows will appear during each scrape cycle — this is`);
+  console.log(`      intentional to avoid Uber bot detection. You can minimise them.`);
   console.log(`Tips: DEBUG=1 for verbose | --test for single district\n`);
   (async () => { await runCycle(); setInterval(runCycle, INTERVAL_MS); })();
 }

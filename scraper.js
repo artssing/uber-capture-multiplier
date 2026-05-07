@@ -156,95 +156,79 @@ async function pushSurgeJson(payload) {
 
 // ── Fill Uber price estimate form ─────────────────────────────────────────────
 async function fillUberForm(page, district) {
-  // Selectors confirmed from debug output (aria-labels in zh-TW locale)
-  const PICKUP_LABELS  = ['取車地點', 'Pickup location', 'Enter pickup location'];
-  const DROPOFF_LABELS = ['下車地點', 'Dropoff location', 'Enter destination'];
+  // aria-labels confirmed from debug (zh-TW locale)
+  const PICKUP_SELS  = ['取車地點', 'Pickup location'].map(l => `[aria-label="${l}"]`);
+  const DROPOFF_SELS = ['下車地點', 'Dropoff location'].map(l => `[aria-label="${l}"]`);
 
-  // Build a CSS selector that matches any of the aria-labels
-  function labelSel(labels) {
-    return labels.map(l => `[aria-label="${l}"]`).join(', ');
-  }
-
-  if (DEBUG) {
-    const inputs = await page.evaluate(() =>
-      [...document.querySelectorAll('input')].filter(el => el.offsetParent !== null).map(el => ({
-        label: el.getAttribute('aria-label'), id: el.id, val: el.value,
-      }))
-    );
-    console.log('  [inputs]', JSON.stringify(inputs));
-  }
-
-  async function typeAndPick(labelSels, text) {
-    // Use page.focus() to activate the field without relying on click coordinates
-    try {
-      await page.focus(labelSels);
-    } catch (_) {
-      // If focus fails, try JS-based focus as fallback
-      await page.evaluate((sel) => {
-        const el = document.querySelector(sel);
-        if (el) { el.focus(); el.click(); }
-      }, labelSels.split(',')[0].trim());
-      await new Promise(r => setTimeout(r, 300));
+  async function focusInput(selectors) {
+    for (const sel of selectors) {
+      const found = await page.$(sel);
+      if (found) {
+        // Use JS focus — avoids "not clickable" errors from overlapping elements
+        await page.evaluate(s => {
+          const el = document.querySelector(s);
+          if (el) { el.focus(); el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })); }
+        }, sel);
+        await new Promise(r => setTimeout(r, 200));
+        return sel;
+      }
     }
+    return null;
+  }
 
-    // Select-all then type (works cross-platform: focus puts cursor in field)
-    await page.keyboard.down('Meta');  // Command on Mac / treated as Ctrl elsewhere
-    await page.keyboard.press('a');
-    await page.keyboard.up('Meta');
-    await page.keyboard.press('Backspace');
-    await page.keyboard.type(text, { delay: 70 });
+  async function typeAndPick(selectors, text) {
+    const activeSel = await focusInput(selectors);
+    if (!activeSel) { console.log(`  [form] ⚠ input not found`); return; }
+
+    // Clear existing value: go to end, select all back to start, delete
+    await page.keyboard.press('End');
+    await page.keyboard.down('Shift');
+    await page.keyboard.press('Home');
+    await page.keyboard.up('Shift');
+    await page.keyboard.press('Delete');
+
+    // Re-focus in case Delete moved focus
+    await page.evaluate(s => document.querySelector(s)?.focus(), activeSel);
+
+    await page.keyboard.type(text, { delay: 80 });
     if (DEBUG) console.log(`  [type] "${text}"`);
 
-    // Wait for pudoLocationSearch API to respond & dropdown to render
+    // Wait for pudoLocationSearch to respond
     await new Promise(r => setTimeout(r, 2500));
 
-    // Log what dropdown options appeared
     if (DEBUG) {
-      const opts = await page.evaluate(() =>
-        [...document.querySelectorAll('[role="option"],[role="listitem"],[data-index]')]
-          .map(el => el.textContent.trim().slice(0, 60))
-      );
-      console.log(`  [dropdown] ${opts.length} options:`, opts.slice(0, 3));
+      // Dump everything that appeared in the DOM after typing
+      const snapshot = await page.evaluate(() => {
+        const focused = document.activeElement;
+        const container = focused?.closest('[data-testid], [role="combobox"], form') || document.body;
+        return container.innerHTML.slice(0, 1000);
+      });
+      console.log('  [dom-after-type]', snapshot.slice(0, 400));
     }
 
-    // Click first suggestion
-    const picked = await page.evaluate(() => {
-      const candidates = [
-        ...(document.querySelectorAll('[role="option"]')),
-        ...(document.querySelectorAll('[role="listitem"]')),
-        ...(document.querySelectorAll('[data-index="0"]')),
-      ];
-      const first = candidates.find(el => el.textContent.trim().length > 0);
-      if (first) { first.click(); return first.textContent.trim().slice(0, 60); }
-      return null;
-    });
-
-    if (picked) {
-      if (DEBUG) console.log(`  [autocomplete] clicked: "${picked}"`);
-    } else {
-      await page.keyboard.press('ArrowDown');
-      await new Promise(r => setTimeout(r, 400));
-      await page.keyboard.press('Enter');
-      if (DEBUG) console.log('  [autocomplete] ArrowDown+Enter fallback');
-    }
+    // Use keyboard navigation only — avoids selecting wrong DOM nodes
+    await page.keyboard.press('ArrowDown');
+    await new Promise(r => setTimeout(r, 400));
+    await page.keyboard.press('Enter');
+    if (DEBUG) console.log('  [autocomplete] ArrowDown+Enter');
     await new Promise(r => setTimeout(r, 1000));
   }
 
-  await typeAndPick(labelSel(PICKUP_LABELS),  district.en);
-  await typeAndPick(labelSel(DROPOFF_LABELS), DROPOFF.en);
+  await typeAndPick(PICKUP_SELS,  district.en);
+  await typeAndPick(DROPOFF_SELS, DROPOFF.en);
 
-  // Click "See prices" / submit button
+  // Click submit — match exact text "查看價格" / "See prices" to avoid FAQ buttons
   const clicked = await page.evaluate(() => {
-    const btns = [
-      document.querySelector('button[data-testid*="submit"]'),
-      document.querySelector('button[type="submit"]'),
-      ...[...document.querySelectorAll('button,[role="button"]')]
-        .filter(b => /see prices|get estimate|查看|確認|估價/i.test(b.textContent)),
-    ].filter(Boolean);
-    if (btns[0]) { btns[0].click(); return btns[0].textContent.trim().slice(0, 40); }
+    const exact = ['查看價格', 'See prices', 'Get estimate'];
+    const all = [...document.querySelectorAll('button, [role="button"]')];
+    const btn = all.find(b => exact.some(t => b.textContent.trim().startsWith(t)));
+    if (btn) { btn.click(); return btn.textContent.trim().slice(0, 40); }
+    // Last resort: button[type=submit] but only if it's inside the form area
+    const sub = document.querySelector('form button[type="submit"], [data-testid*="submit"]');
+    if (sub) { sub.click(); return sub.textContent.trim().slice(0, 40); }
     return null;
   });
-  if (DEBUG) console.log(`  [submit] ${clicked || 'no button found'}`);
+  if (DEBUG) console.log(`  [submit] ${clicked || 'no button matched'}`);
   return !!clicked;
 }
 

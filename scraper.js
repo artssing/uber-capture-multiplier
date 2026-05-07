@@ -155,80 +155,83 @@ async function pushSurgeJson(payload) {
 }
 
 // ── Fill Uber price estimate form ─────────────────────────────────────────────
-// Returns true if both fields were filled and "See prices" was clicked.
 async function fillUberForm(page, district) {
-  // Dump all visible inputs for debug
   if (DEBUG) {
     const inputs = await page.evaluate(() =>
       [...document.querySelectorAll('input')].filter(el => el.offsetParent !== null).map(el => ({
-        ph: el.placeholder, label: el.getAttribute('aria-label'), name: el.name, id: el.id, val: el.value,
+        ph: el.placeholder, label: el.getAttribute('aria-label'), id: el.id, val: el.value,
       }))
     );
     console.log('  [inputs]', JSON.stringify(inputs));
   }
 
-  // Pick visible inputs — first = pickup, second = dropoff
-  const inputHandles = await page.$$('input');
-  const visibleInputs = [];
-  for (const h of inputHandles) {
-    const visible = await h.evaluate(el => el.offsetParent !== null && el.type !== 'hidden');
-    if (visible) visibleInputs.push(h);
-    if (visibleInputs.length === 2) break;
-  }
-
-  if (visibleInputs.length < 2) {
-    if (DEBUG) console.log(`  [form] only ${visibleInputs.length} visible inputs found`);
-    return false;
+  // Use known aria-labels (discovered from debug output); fall back to position
+  async function findInput(labelPatterns) {
+    // Try aria-label selector first
+    for (const pat of labelPatterns) {
+      const el = await page.$(`[aria-label="${pat}"]`);
+      if (el) return el;
+    }
+    // Fallback: nth visible input
+    const allInputs = await page.$$('input');
+    const visible = [];
+    for (const h of allInputs) {
+      const v = await h.evaluate(el => el.offsetParent !== null && el.type !== 'hidden');
+      if (v) visible.push(h);
+      if (visible.length === 2) break;
+    }
+    return labelPatterns.includes('取車地點') ? visible[0] : visible[1];
   }
 
   async function typeAndPick(handle, text) {
+    if (!handle) { console.log(`  [form] input not found for "${text}"`); return; }
+    // Triple-click selects existing text, then typing replaces it
     await handle.click({ clickCount: 3 });
-    await handle.type('', { delay: 30 });  // clear
-    await page.keyboard.press('Control+a');
-    await page.keyboard.press('Backspace');
     await handle.type(text, { delay: 70 });
     if (DEBUG) console.log(`  [type] "${text}"`);
 
-    // Wait for autocomplete dropdown to appear
-    await new Promise(r => setTimeout(r, 2000));
+    // Wait for pudoLocationSearch to respond and dropdown to render
+    await new Promise(r => setTimeout(r, 2500));
 
-    // Try clicking the first suggestion
+    // Click first autocomplete suggestion
     const picked = await page.evaluate(() => {
-      const opts = [
-        ...document.querySelectorAll('[role="option"], [data-testid*="suggestion"], [class*="suggestion"], li[id*="option"]'),
-      ];
-      if (opts.length > 0) { opts[0].click(); return opts[0].textContent.trim().slice(0,50); }
+      const opts = [...document.querySelectorAll(
+        '[role="option"], [role="listitem"], [data-testid*="suggestion"], li[id*="option"]'
+      )];
+      if (opts.length > 0) { opts[0].click(); return opts[0].textContent.trim().slice(0, 60); }
       return null;
     });
 
     if (picked) {
-      if (DEBUG) console.log(`  [autocomplete] picked: ${picked}`);
+      if (DEBUG) console.log(`  [autocomplete] clicked: "${picked}"`);
     } else {
-      // Fallback: arrow down + enter
+      // Fallback: arrow key + enter
       await page.keyboard.press('ArrowDown');
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise(r => setTimeout(r, 400));
       await page.keyboard.press('Enter');
-      if (DEBUG) console.log('  [autocomplete] used ArrowDown+Enter fallback');
+      if (DEBUG) console.log('  [autocomplete] ArrowDown+Enter fallback');
     }
     await new Promise(r => setTimeout(r, 800));
   }
 
-  await typeAndPick(visibleInputs[0], district.en);
-  await typeAndPick(visibleInputs[1], DROPOFF.en);
+  const pickupHandle = await findInput(['取車地點', 'Pickup location', 'Enter pickup location']);
+  const dropoffHandle = await findInput(['下車地點', 'Dropoff location', 'Enter destination']);
 
-  // Click "See prices" / submit button
+  await typeAndPick(pickupHandle, district.en);
+  await typeAndPick(dropoffHandle, DROPOFF.en);
+
+  // Click "See prices" / submit
   const clicked = await page.evaluate(() => {
     const candidates = [
       document.querySelector('button[data-testid*="submit"]'),
       document.querySelector('button[type="submit"]'),
       ...[...document.querySelectorAll('button,[role="button"]')]
-        .filter(b => /see prices|get estimate|查看|確認/i.test(b.textContent)),
+        .filter(b => /see prices|get estimate|查看|確認|估價/i.test(b.textContent)),
     ].filter(Boolean);
-    if (candidates[0]) { candidates[0].click(); return candidates[0].textContent.trim().slice(0,40); }
+    if (candidates[0]) { candidates[0].click(); return candidates[0].textContent.trim().slice(0, 40); }
     return null;
   });
-  if (DEBUG) console.log(`  [click] ${clicked || 'no submit button'}`);
-
+  if (DEBUG) console.log(`  [submit] ${clicked || 'no button found'}`);
   return !!clicked;
 }
 

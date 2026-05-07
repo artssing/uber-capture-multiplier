@@ -1,17 +1,18 @@
 #!/usr/bin/env node
 /**
- * HK Surge Map — local scraper
+ * HK Surge Map — local scraper (Plan B)
  *
  * Scrapes uber.com/en-HK every 60s and pushes surge.json to
  * the gh-pages branch via the GitHub Contents API.
  *
  * Setup:
- *   1. npm install
- *   2. npx puppeteer browsers install chrome   (first time only)
- *   3. export GITHUB_TOKEN=ghp_xxxxxxxxxxxx    (needs repo contents:write)
- *      export GITHUB_OWNER=artssing            (your GitHub username)
- *      export GITHUB_REPO=uber-capture-multiplier
- *   4. node scraper.js
+ *   npm install
+ *   npx puppeteer browsers install chrome          # first time only
+ *   export GITHUB_TOKEN=ghp_xxxxxxxxxxxx
+ *   node scraper.js
+ *
+ * Debug single district:
+ *   DEBUG=1 node scraper.js --test
  */
 
 const puppeteer = require('puppeteer-extra');
@@ -19,17 +20,16 @@ const Stealth   = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(Stealth());
 
 // ── Config ────────────────────────────────────────────────────────────────────
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
-const GITHUB_OWNER = process.env.GITHUB_OWNER || 'artssing';
-const GITHUB_REPO  = process.env.GITHUB_REPO  || 'uber-capture-multiplier';
+const GITHUB_TOKEN  = process.env.GITHUB_TOKEN || '';
+const GITHUB_OWNER  = process.env.GITHUB_OWNER  || 'artssing';
+const GITHUB_REPO   = process.env.GITHUB_REPO   || 'uber-capture-multiplier';
 const GITHUB_BRANCH = 'gh-pages';
-const GITHUB_FILE   = 'surge.json';
 const INTERVAL_MS   = 60_000;
 const DEBUG         = process.env.DEBUG === '1';
+const TEST_MODE     = process.argv.includes('--test'); // scrape one district & exit
 
-if (!GITHUB_TOKEN) {
-  console.error('[error] GITHUB_TOKEN not set.');
-  console.error('  export GITHUB_TOKEN=ghp_your_personal_access_token');
+if (!GITHUB_TOKEN && !TEST_MODE) {
+  console.error('[error] GITHUB_TOKEN not set.\n  export GITHUB_TOKEN=ghp_your_token');
   process.exit(1);
 }
 
@@ -55,70 +55,61 @@ const DISTRICTS = [
   { id:'islands',         cn:'離島區',  lat:22.2612, lng:113.9448 },
 ];
 
-const DROPOFF = { lat:22.2870, lng:114.1600 }; // Central Ferry Piers
+// Central Ferry Piers — fixed drop-off for all queries
+const DROPOFF = { lat:22.2870, lng:114.1600 };
 
-// Baseline prices for normalisation (populated on first scrape)
+// Baseline prices for ratio normalisation (populated on first successful scrape)
 const basePrices = {};
 
 // ── GitHub API ────────────────────────────────────────────────────────────────
-async function githubGet(path) {
-  const res = await fetch(`https://api.github.com${path}`, {
-    headers: {
-      Authorization: `Bearer ${GITHUB_TOKEN}`,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-    },
-  });
-  if (!res.ok) throw new Error(`GitHub GET ${path} → ${res.status}`);
-  return res.json();
-}
-
-async function githubPut(path, body) {
-  const res = await fetch(`https://api.github.com${path}`, {
-    method: 'PUT',
-    headers: {
-      Authorization: `Bearer ${GITHUB_TOKEN}`,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`GitHub PUT ${path} → ${res.status}: ${txt.slice(0,200)}`);
-  }
-  return res.json();
+async function githubGetSha() {
+  const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_BRANCH === 'gh-pages' ? '' : ''}surge.json?ref=${GITHUB_BRANCH}`;
+  const res = await fetch(
+    `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/surge.json?ref=${GITHUB_BRANCH}`,
+    { headers: { Authorization:`Bearer ${GITHUB_TOKEN}`, Accept:'application/vnd.github+json', 'X-GitHub-Api-Version':'2022-11-28' } }
+  );
+  if (res.status === 404) return undefined; // new file
+  if (!res.ok) throw new Error(`GitHub GET surge.json → ${res.status}`);
+  return (await res.json()).sha;
 }
 
 async function pushSurgeJson(payload) {
-  const filePath = `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_FILE}`;
-  const content  = Buffer.from(JSON.stringify(payload, null, 2)).toString('base64');
-
-  // Get current SHA (needed for updates)
+  const content = Buffer.from(JSON.stringify(payload, null, 2)).toString('base64');
   let sha;
-  try {
-    const existing = await githubGet(`${filePath}?ref=${GITHUB_BRANCH}`);
-    sha = existing.sha;
-  } catch (_) {
-    // File doesn't exist yet — first create
+  try { sha = await githubGetSha(); } catch (e) { console.error('[github] GET sha failed:', e.message); }
+
+  const res = await fetch(
+    `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/surge.json`,
+    {
+      method: 'PUT',
+      headers: { Authorization:`Bearer ${GITHUB_TOKEN}`, Accept:'application/vnd.github+json', 'X-GitHub-Api-Version':'2022-11-28', 'Content-Type':'application/json' },
+      body: JSON.stringify({ message:`surge: ${new Date().toISOString()}`, content, branch:GITHUB_BRANCH, ...(sha ? { sha } : {}) }),
+    }
+  );
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`GitHub PUT → ${res.status}: ${txt.slice(0,200)}`);
   }
+  console.log('[github] surge.json pushed ✓');
+}
 
-  await githubPut(filePath, {
-    message: `surge: update ${new Date().toISOString()}`,
-    content,
-    branch: GITHUB_BRANCH,
-    ...(sha ? { sha } : {}),
+// ── Browser launch ────────────────────────────────────────────────────────────
+function launchBrowser() {
+  return puppeteer.launch({
+    headless: true,
+    ignoreHTTPSErrors: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-blink-features=AutomationControlled',
+      '--lang=zh-HK',
+      '--window-size=390,844',
+    ],
   });
-  console.log(`[github] surge.json pushed to ${GITHUB_BRANCH} ✓`);
 }
 
-// ── Scraping helpers ──────────────────────────────────────────────────────────
-function clamp(m) {
-  if (m == null || isNaN(m)) return null;
-  return Math.round(Math.max(1.0, Math.min(3.5, m)) * 10) / 10;
-}
-
+// ── Scrape one district ───────────────────────────────────────────────────────
 async function scrapeOne(browser, district) {
   const page = await browser.newPage();
 
@@ -126,69 +117,119 @@ async function scrapeOne(browser, district) {
     'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) ' +
     'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1'
   );
-  await page.setExtraHTTPHeaders({ 'Accept-Language': 'zh-HK,zh;q=0.9,en;q=0.8' });
+  await page.setExtraHTTPHeaders({
+    'Accept-Language': 'zh-HK,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  });
   await page.setViewport({ width:390, height:844, isMobile:true, hasTouch:true, deviceScaleFactor:3 });
 
-  // Block images/fonts to speed up
+  // Abort heavyweight assets
   await page.setRequestInterception(true);
   page.on('request', req => {
-    if (['image','media','font','stylesheet'].includes(req.resourceType())) req.abort();
+    if (['image','media','font'].includes(req.resourceType())) req.abort();
     else req.continue();
   });
 
+  // Capture ALL JSON responses from Uber endpoints
   let apiSurge = null, apiPrice = null;
+  const capturedUrls = [];
 
   page.on('response', async resp => {
-    if (apiSurge !== null) return;
-    if (!(resp.headers()['content-type'] || '').includes('json')) return;
-    if (!resp.url().includes('uber')) return;
+    const respUrl = resp.url();
+    const ct = resp.headers()['content-type'] || '';
+    if (!ct.includes('json')) return;
+    if (!respUrl.includes('uber')) return;
+    capturedUrls.push(respUrl);
     try {
       const text = await resp.text();
-      // Scan for surge_multiplier anywhere in the JSON blob
+      if (DEBUG) console.log(`  [net] ${resp.status()} ${respUrl.slice(0,90)}`);
+      if (DEBUG && text.length < 2000) console.log(`       ${text.slice(0,300)}`);
       const sm = text.match(/"surge_multiplier"\s*:\s*([\d.]+)/);
       const lp = text.match(/"low_estimate"\s*:\s*([\d.]+)/);
-      if (sm) { apiSurge = parseFloat(sm[1]); if (DEBUG) console.log(`  [net] surge=${apiSurge}`); }
+      const hk = text.match(/"value"\s*:\s*"?([\d.]+)"?/);
+      if (sm) { apiSurge = parseFloat(sm[1]); console.log(`  [net] ✓ surge_multiplier=${apiSurge}`); }
       if (lp) { apiPrice = parseFloat(lp[1]); }
-    } catch (_) {}
+      else if (hk && !apiPrice) { apiPrice = parseFloat(hk[1]); }
+    } catch (e) {
+      if (DEBUG) console.log(`  [net] parse error: ${e.message}`);
+    }
   });
 
+  // Try URLs in order — show every error explicitly
   const urls = [
     `https://www.uber.com/en-HK/price-estimate/?pickup_lat=${district.lat}&pickup_lng=${district.lng}&dropoff_lat=${DROPOFF.lat}&dropoff_lng=${DROPOFF.lng}`,
     `https://www.uber.com/global/en/price-estimate/?pickup_lat=${district.lat}&pickup_lng=${district.lng}&dropoff_lat=${DROPOFF.lat}&dropoff_lng=${DROPOFF.lng}`,
+    `https://m.uber.com/looking`,
   ];
 
   let loaded = false;
+  let lastError = '';
+  let pageTitle = '';
+  let finalUrl = '';
+
   for (const url of urls) {
     try {
-      await page.goto(url, { waitUntil:'domcontentloaded', timeout:18000 });
-      await page.waitForTimeout(5000);
-      const finalUrl = page.url();
-      if (!finalUrl.startsWith('chrome-error')) { loaded = true; break; }
-    } catch (_) {}
+      if (DEBUG) console.log(`  [goto] ${url.slice(0,80)}`);
+      const resp = await page.goto(url, { waitUntil:'domcontentloaded', timeout:20000 });
+      const status = resp ? resp.status() : 0;
+      finalUrl = page.url();
+      pageTitle = await page.title();
+      if (DEBUG) console.log(`  [page] status=${status} title="${pageTitle}" url=${finalUrl.slice(0,70)}`);
+
+      if (finalUrl.startsWith('chrome-error')) {
+        lastError = `chrome-error (SSL/network): ${finalUrl}`;
+        continue;
+      }
+      if (status === 403 || status === 429) {
+        lastError = `HTTP ${status} (blocked)`;
+        continue;
+      }
+      // Give SPA time to fire XHR/fetch calls
+      await new Promise(r => setTimeout(r, 5000));
+      loaded = true;
+      break;
+    } catch (e) {
+      lastError = e.message;
+      if (DEBUG) console.log(`  [goto] error: ${e.message}`);
+    }
   }
 
+  if (!loaded) {
+    await page.close();
+    return { multiplier:null, price:null, source:'error', error:lastError };
+  }
+
+  // DOM fallback: scan body text and inline scripts for price/surge data
   let domSurge = null, domPrice = null;
-  if (loaded) {
+  try {
     const r = await page.evaluate(() => {
-      const text = document.body.innerText;
-      const sm   = text.match(/(\d+\.\d+)\s*[x×X]/i);
-      const hk   = text.match(/HK\$\s*(\d+(?:\.\d+)?)/);
+      const text = document.body.innerText || '';
       const scripts = [...document.querySelectorAll('script')]
-        .map(s => s.textContent).join('');
-      const ssm = scripts.match(/"surge_multiplier"\s*:\s*([\d.]+)/);
-      const slp = scripts.match(/"low_estimate"\s*:\s*([\d.]+)/);
+        .map(s => s.textContent).join('\n');
+      const all = text + '\n' + scripts;
+
+      const smMatch  = all.match(/"?surge_multiplier"?\s*[=:]\s*([\d.]+)/);
+      const surgeX   = text.match(/(\d+\.\d+)\s*[x×X×]/i);
+      const hkPrice  = text.match(/HK\$\s*(\d+(?:\.\d+)?)/);
+      const lowEst   = all.match(/"low_estimate"\s*:\s*([\d.]+)/);
+
       return {
-        surge:  ssm ? parseFloat(ssm[1]) : (sm ? parseFloat(sm[1]) : null),
-        price:  slp ? parseFloat(slp[1]) : (hk ? parseFloat(hk[1]) : null),
+        surge: smMatch  ? parseFloat(smMatch[1])  : (surgeX ? parseFloat(surgeX[1]) : null),
+        price: lowEst   ? parseFloat(lowEst[1])   : (hkPrice ? parseFloat(hkPrice[1]) : null),
+        snippet: text.slice(0, 300).replace(/\s+/g, ' '),
       };
     });
     domSurge = r.surge;
     domPrice = r.price;
     if (DEBUG) console.log(`  [dom] surge=${domSurge} price=${domPrice}`);
+    if (DEBUG) console.log(`  [dom] body: ${r.snippet}`);
+  } catch (e) {
+    if (DEBUG) console.log(`  [dom] evaluate error: ${e.message}`);
   }
 
   await page.close();
 
+  // Pick best data source
   let multiplier = null;
   let price      = apiPrice ?? domPrice;
   let source     = 'error';
@@ -202,18 +243,34 @@ async function scrapeOne(browser, district) {
       basePrices[district.id] = price;
       multiplier = 1.0; source = 'baseline';
     } else {
-      const ratio = price / basePrices[district.id];
-      multiplier = clamp(ratio); source = 'ratio';
+      multiplier = clamp(price / basePrices[district.id]); source = 'ratio';
     }
   }
 
-  return { multiplier, price, source };
+  return { multiplier, price, source, pageTitle, finalUrl, capturedUrls: capturedUrls.length };
 }
 
-// ── Main scrape cycle ─────────────────────────────────────────────────────────
+function clamp(m) {
+  if (m == null || isNaN(m)) return null;
+  return Math.round(Math.max(1.0, Math.min(3.5, m)) * 10) / 10;
+}
+
+// ── --test mode: diagnose a single district ───────────────────────────────────
+async function runTest() {
+  console.log('=== TEST MODE (中西區) ===');
+  const browser = await launchBrowser();
+  try {
+    const r = await scrapeOne(browser, DISTRICTS[0]);
+    console.log('\n=== RESULT ===');
+    console.log(JSON.stringify(r, null, 2));
+  } finally {
+    await browser.close();
+  }
+}
+
+// ── Full scrape cycle ─────────────────────────────────────────────────────────
 async function runCycle() {
   console.log(`\n[scraper] ── Cycle ${new Date().toLocaleTimeString('zh-HK')} ──`);
-
   const result = {
     updatedAt: new Date().toISOString(),
     status: 'ok',
@@ -224,12 +281,7 @@ async function runCycle() {
 
   let browser;
   try {
-    browser = await puppeteer.launch({
-      headless: true,
-      ignoreHTTPSErrors: true,
-      args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage',
-             '--disable-blink-features=AutomationControlled','--lang=zh-HK'],
-    });
+    browser = await launchBrowser();
 
     for (let i = 0; i < DISTRICTS.length; i++) {
       const d = DISTRICTS[i];
@@ -242,28 +294,30 @@ async function runCycle() {
           updatedAt:  new Date().toISOString(),
         };
         if (r.multiplier !== null) result.liveCount++;
-        console.log(`${r.multiplier ?? 'n/a'}x [${r.source}]`);
+        const tag = r.multiplier !== null ? `${r.multiplier}x [${r.source}]` : `null [${r.source}] ${r.error || ''}`;
+        console.log(tag);
       } catch (e) {
-        result.data[d.id] = { multiplier: null, source: 'error' };
-        console.log(`error: ${e.message.slice(0,50)}`);
+        result.data[d.id] = { multiplier:null, source:'error', updatedAt:new Date().toISOString() };
+        console.log(`EXCEPTION: ${e.message}`);
       }
       if (i < DISTRICTS.length - 1) await new Promise(r => setTimeout(r, 2800));
     }
   } catch (e) {
     result.status = 'error';
-    console.error('[scraper] Fatal:', e.message);
+    console.error('[scraper] Fatal launch error:', e.message);
   } finally {
     if (browser) { try { await browser.close(); } catch (_) {} }
+    result.status = result.liveCount > 0 ? 'ok' : 'simulated';
+    result.nextUpdate = new Date(Date.now() + INTERVAL_MS).toISOString();
+    console.log(`[scraper] Done — ${result.liveCount}/${result.total} live`);
   }
 
-  if (result.liveCount === 0) result.status = 'simulated';
-  console.log(`[scraper] ${result.liveCount}/${result.total} live data points`);
-
-  // Push to GitHub Pages
-  try {
-    await pushSurgeJson(result);
-  } catch (e) {
-    console.error('[github] Push failed:', e.message);
+  if (GITHUB_TOKEN) {
+    try { await pushSurgeJson(result); }
+    catch (e) { console.error('[github] Push failed:', e.message); }
+  } else {
+    console.log('[github] Skipped (no GITHUB_TOKEN)');
+    console.log(JSON.stringify(result, null, 2));
   }
 }
 
@@ -271,11 +325,14 @@ async function runCycle() {
 console.log('╔════════════════════════════════════════╗');
 console.log('║   HK Surge Map — Local Scraper         ║');
 console.log('╚════════════════════════════════════════╝');
-console.log(`Repo:   ${GITHUB_OWNER}/${GITHUB_REPO}  branch: ${GITHUB_BRANCH}`);
-console.log(`Output: https://${GITHUB_OWNER}.github.io/${GITHUB_REPO}/`);
-console.log(`Interval: ${INTERVAL_MS / 1000}s\n`);
-
-(async () => {
-  await runCycle();
-  setInterval(runCycle, INTERVAL_MS);
-})();
+if (TEST_MODE) {
+  runTest().catch(console.error);
+} else {
+  console.log(`Map:  https://${GITHUB_OWNER}.github.io/${GITHUB_REPO}/`);
+  console.log(`Tip:  Run with DEBUG=1 for verbose output`);
+  console.log(`Tip:  Run with --test to diagnose one district\n`);
+  (async () => {
+    await runCycle();
+    setInterval(runCycle, INTERVAL_MS);
+  })();
+}

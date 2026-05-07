@@ -2,7 +2,7 @@
 /**
  * HK Surge Map — local scraper (Plan B)
  *
- * First-time setup (solve CAPTCHA once, saves cookies):
+ * First-time setup (login + CAPTCHA, saves cookies):
  *   node scraper.js --setup
  *
  * Normal operation (uses saved cookies):
@@ -68,19 +68,20 @@ function saveCookies(cookies) {
   fs.writeFileSync(COOKIES_FILE, JSON.stringify(cookies, null, 2));
 }
 
-// ── Setup mode: open real browser, user solves CAPTCHA, save cookies ──────────
+// ── Setup mode: visible browser, user logs in + solves CAPTCHA ────────────────
 async function runSetup() {
-  console.log('\n╔══════════════════════════════════════════════════════╗');
-  console.log('║  SETUP MODE — Cookie capture                         ║');
-  console.log('╠══════════════════════════════════════════════════════╣');
-  console.log('║  1. A browser window will open                       ║');
-  console.log('║  2. Complete any CAPTCHA / security check            ║');
-  console.log('║  3. Navigate to the price estimator page             ║');
-  console.log('║  4. Press ENTER here when the page loads normally    ║');
-  console.log('╚══════════════════════════════════════════════════════╝\n');
+  console.log('\n╔══════════════════════════════════════════════════════════╗');
+  console.log('║  SETUP MODE — Login & Cookie Capture                     ║');
+  console.log('╠══════════════════════════════════════════════════════════╣');
+  console.log('║  A browser window will open uber.com                     ║');
+  console.log('║  1. Complete any CAPTCHA / security check                ║');
+  console.log('║  2. LOG IN to your Uber account (required for prices)    ║');
+  console.log('║  3. Navigate to the price estimator page if needed       ║');
+  console.log('║  4. Once prices are visible, press ENTER here            ║');
+  console.log('╚══════════════════════════════════════════════════════════╝\n');
 
   const browser = await puppeteer.launch({
-    headless: false,   // visible window
+    headless: false,
     ignoreHTTPSErrors: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=430,900'],
     defaultViewport: null,
@@ -93,22 +94,39 @@ async function runSetup() {
   );
 
   const TARGET = `https://www.uber.com/en-HK/price-estimate/?pickup_lat=22.2839&pickup_lng=114.1521&dropoff_lat=22.287&dropoff_lng=114.16`;
-  await page.goto(TARGET, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  console.log(`Opening: ${TARGET}\n`);
+  try { await page.goto(TARGET, { waitUntil: 'domcontentloaded', timeout: 30000 }); }
+  catch (e) { console.log(`(goto: ${e.message})`); }
 
-  console.log('Browser opened. Complete any security check in the window.');
-  console.log('When the price estimator page loads normally, press ENTER...');
+  console.log('Complete login / CAPTCHA in the browser window.');
+  console.log('When prices are visible on the page, press ENTER here...');
 
   await new Promise(resolve => {
-    process.stdin.setRawMode(false);
+    process.stdin.setRawMode && process.stdin.setRawMode(false);
     process.stdin.resume();
     process.stdin.once('data', resolve);
   });
 
   const cookies = await page.cookies();
   saveCookies(cookies);
-  console.log(`\n✓ Saved ${cookies.length} cookies to ${COOKIES_FILE}`);
-  console.log('✓ Setup complete! Now run:  GITHUB_TOKEN=ghp_xxx node scraper.js\n');
 
+  // Also grab localStorage tokens if present
+  const storage = await page.evaluate(() => {
+    const out = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (/token|session|auth|user/i.test(k)) out[k] = localStorage.getItem(k);
+    }
+    return out;
+  }).catch(() => ({}));
+
+  if (Object.keys(storage).length) {
+    fs.writeFileSync(path.join(__dirname, '.uber-storage.json'), JSON.stringify(storage, null, 2));
+    console.log(`\n✓ Saved localStorage tokens to .uber-storage.json`);
+  }
+
+  console.log(`✓ Saved ${cookies.length} cookies to .uber-cookies.json`);
+  console.log('✓ Setup complete! Now run:\n  GITHUB_TOKEN=ghp_xxx node scraper.js\n');
   await browser.close();
   process.exit(0);
 }
@@ -156,7 +174,6 @@ async function launchBrowser() {
 async function scrapeOne(browser, district, savedCookies) {
   const page = await browser.newPage();
 
-  // Desktop UA — more consistent with saved cookie session
   await page.setUserAgent(
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ' +
     'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
@@ -164,7 +181,6 @@ async function scrapeOne(browser, district, savedCookies) {
   await page.setExtraHTTPHeaders({ 'Accept-Language': 'zh-HK,zh;q=0.9,en;q=0.8' });
   await page.setViewport({ width:1280, height:800 });
 
-  // Inject saved cookies so Uber sees an authenticated browser session
   if (savedCookies && savedCookies.length > 0) {
     await page.setCookie(...savedCookies);
   }
@@ -175,108 +191,164 @@ async function scrapeOne(browser, district, savedCookies) {
     else req.continue();
   });
 
+  // Use flags instead of throwing from async event handlers
   let apiSurge = null, apiPrice = null;
-  const capturedUrls = [];
+  let captchaDetected = false;
+  let loginRequired = false;
+  const netLog = [];
 
   page.on('response', async resp => {
     const respUrl = resp.url();
     const ct = resp.headers()['content-type'] || '';
+
+    // Detect CAPTCHA challenge page
+    if (respUrl.includes('def.uber.com') || respUrl.includes('/challenge')) {
+      captchaDetected = true;
+      netLog.push(`CAPTCHA: ${respUrl.slice(0, 80)}`);
+      return;
+    }
+
     if (!ct.includes('json')) return;
-    capturedUrls.push(respUrl);
+
+    let text = '';
+    try { text = await resp.text(); } catch (_) { return; }
+    if (!text || text.length < 5) return;
+
+    if (DEBUG) console.log(`  [net] ${resp.status()} ${respUrl.slice(0,90)}`);
+    if (DEBUG && text.length < 3000) console.log(`       ${text.slice(0,400)}`);
+
+    // Check for auth errors in JSON
     try {
-      const text = await resp.text();
-      if (DEBUG) console.log(`  [net] ${resp.status()} ${respUrl.slice(0,90)}`);
-      if (DEBUG && text.length < 3000) console.log(`       ${text.slice(0,400)}`);
-
-      // If CAPTCHA challenge detected, throw so caller knows to re-setup
-      if (respUrl.includes('def.uber.com') && text.includes('RECAPTCHA')) {
-        throw new Error('CAPTCHA_REQUIRED');
+      const j = JSON.parse(text);
+      if (j.code === 'unauthorized' || j.error === 'unauthorized' || j.status === 401) {
+        loginRequired = true;
+        netLog.push(`AUTH ERROR: ${respUrl.slice(0,60)}`);
+        return;
       }
+    } catch (_) {}
 
-      const sm = text.match(/"surge_multiplier"\s*:\s*([\d.]+)/);
-      const lp = text.match(/"low_estimate"\s*:\s*([\d.]+)/);
-      if (sm) { apiSurge = parseFloat(sm[1]); console.log(`  [net] ✓ surge=${apiSurge} from ${respUrl.slice(0,60)}`); }
-      if (lp) { apiPrice = parseFloat(lp[1]); }
-    } catch (e) {
-      if (e.message === 'CAPTCHA_REQUIRED') throw e;
-      if (DEBUG) console.log(`  [net] parse error: ${e.message}`);
+    // Extract surge multiplier
+    const sm = text.match(/"surge_multiplier"\s*:\s*([\d.]+)/);
+    const lp = text.match(/"low_estimate"\s*:\s*([\d.]+)/);
+    const he = text.match(/"high_estimate"\s*:\s*([\d.]+)/);
+    const fare = text.match(/"fare"\s*:\s*\{[^}]*"value"\s*:\s*([\d.]+)/);
+    if (sm && apiSurge === null) {
+      apiSurge = parseFloat(sm[1]);
+      netLog.push(`surge=${apiSurge} from ${respUrl.slice(0,50)}`);
+    }
+    if ((lp || he) && apiPrice === null) {
+      apiPrice = lp ? parseFloat(lp[1]) : parseFloat(he[1]);
+    }
+    if (fare && apiPrice === null) {
+      apiPrice = parseFloat(fare[1]);
     }
   });
 
   const url = `https://www.uber.com/en-HK/price-estimate/?pickup_lat=${district.lat}&pickup_lng=${district.lng}&dropoff_lat=${DROPOFF.lat}&dropoff_lng=${DROPOFF.lng}`;
 
-  let loaded = false;
+  let pageTitle = '', finalUrl = '', bodySnippet = '';
   let lastError = '';
+  let loaded = false;
 
   try {
-    if (DEBUG) console.log(`  [goto] ${url.slice(0,80)}`);
-    const resp = await page.goto(url, { waitUntil:'domcontentloaded', timeout:20000 });
+    if (DEBUG) console.log(`  [goto] ${url.slice(0,90)}`);
+    const resp = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
     const status = resp ? resp.status() : 0;
-    const finalUrl = page.url();
-    if (DEBUG) console.log(`  [page] status=${status} url=${finalUrl.slice(0,70)}`);
+    finalUrl = page.url();
+    pageTitle = await page.title().catch(() => '');
 
-    if (finalUrl.includes('def.uber.com')) {
-      lastError = 'CAPTCHA page — run --setup again to refresh cookies';
-    } else if (!finalUrl.startsWith('chrome-error') && status !== 403) {
-      // Wait for page to hydrate
-      await new Promise(r => setTimeout(r, 2000));
+    // Always visible: what page actually loaded
+    console.log(`         title="${pageTitle}" url=${finalUrl.slice(0,70)}`);
 
-      // Click "See prices" button
-      const clicked = await page.evaluate(() => {
+    if (finalUrl.includes('def.uber.com') || finalUrl.includes('/challenge')) {
+      captchaDetected = true;
+      lastError = 'CAPTCHA';
+    } else if (finalUrl.includes('/login') || finalUrl.includes('/signin') || finalUrl.includes('auth.uber')) {
+      loginRequired = true;
+      lastError = 'LOGIN_REQUIRED';
+    } else if (status === 403) {
+      lastError = `HTTP 403`;
+    } else if (!finalUrl.startsWith('chrome-error')) {
+      // Page loaded — wait for hydration then try clicking
+      await new Promise(r => setTimeout(r, 2500));
+
+      const clickResult = await page.evaluate(() => {
+        // Try multiple selectors for the "See prices" button
+        const selectors = [
+          'button[data-testid="submit-button"]',
+          'button[type="submit"]',
+        ];
+        for (const sel of selectors) {
+          const el = document.querySelector(sel);
+          if (el) { el.click(); return `clicked: ${sel}`; }
+        }
+        // Fallback: text match
         const btns = [...document.querySelectorAll('button, [role="button"]')];
-        const target = btns.find(b => /see prices|get estimate|查看/i.test(b.textContent));
-        if (target) { target.click(); return target.textContent.trim(); }
-        return null;
+        const target = btns.find(b => /see prices|get estimate|查看價格|查看/i.test(b.textContent));
+        if (target) { target.click(); return `clicked text: ${target.textContent.trim().slice(0,30)}`; }
+        return `no button (${btns.length} buttons found)`;
       });
-      if (DEBUG) console.log(`  [click] ${clicked || 'no button found'}`);
+      if (DEBUG) console.log(`  [click] ${clickResult}`);
 
-      // Wait for price API response
+      // Wait for price API responses
       await new Promise(r => setTimeout(r, 6000));
       loaded = true;
-    } else {
-      lastError = `HTTP ${status}`;
     }
   } catch (e) {
-    if (e.message === 'CAPTCHA_REQUIRED') {
-      console.error('\n⚠ CAPTCHA detected. Run: node scraper.js --setup\n');
-      process.exit(1);
-    }
-    lastError = e.message;
-    if (DEBUG) console.log(`  [goto] error: ${e.message}`);
+    lastError = e.message.slice(0, 80);
+    if (DEBUG) console.log(`  [goto] error: ${lastError}`);
   }
 
+  // DOM fallback scan
   let domSurge = null, domPrice = null;
-  if (loaded) {
+  if (loaded && apiSurge === null) {
     try {
       const r = await page.evaluate(() => {
         const text = document.body.innerText || '';
         const scripts = [...document.querySelectorAll('script')].map(s => s.textContent).join('\n');
         const all = text + '\n' + scripts;
+        const smMatch = all.match(/"surge_multiplier"\s*:\s*([\d.]+)/) || all.match(/(\d+\.\d+)\s*[x×X]/);
+        const priceMatch = all.match(/"low_estimate"\s*:\s*([\d.]+)/) || text.match(/HK\$\s*(\d+(?:\.\d+)?)/);
         return {
-          surge: (all.match(/"surge_multiplier"\s*:\s*([\d.]+)/) || all.match(/(\d+\.\d+)\s*[x×]/i) || [])[1],
-          price: (all.match(/"low_estimate"\s*:\s*([\d.]+)/) || text.match(/HK\$\s*(\d+(?:\.\d+)?)/) || [])[1],
-          snippet: text.slice(0,400).replace(/\s+/g,' '),
+          surge: smMatch ? parseFloat(smMatch[1]) : null,
+          price: priceMatch ? parseFloat(priceMatch[1]) : null,
+          snippet: text.slice(0, 500).replace(/\s+/g, ' ').trim(),
         };
       });
-      domSurge = r.surge ? parseFloat(r.surge) : null;
-      domPrice = r.price ? parseFloat(r.price) : null;
+      domSurge = r.surge;
+      domPrice = r.price;
+      bodySnippet = r.snippet;
       if (DEBUG) console.log(`  [dom] surge=${domSurge} price=${domPrice}`);
-      if (DEBUG) console.log(`  [dom] body: ${r.snippet}`);
+      if (DEBUG) console.log(`  [dom] body: ${bodySnippet.slice(0,200)}`);
+      // Always show body snippet when no data found
+      if (apiSurge === null && domSurge === null && !DEBUG) {
+        console.log(`         body: ${bodySnippet.slice(0,180)}`);
+      }
     } catch (_) {}
   }
 
   await page.close();
 
-  let multiplier = null, price = apiPrice ?? domPrice, source = 'error';
+  // Report CAPTCHA / login issues clearly
+  if (captchaDetected) {
+    console.error('\n⚠  CAPTCHA detected — run: node scraper.js --setup\n');
+    process.exit(1);
+  }
+  if (loginRequired) {
+    console.error('\n⚠  Login required — run: node scraper.js --setup  (log in to Uber in the browser)\n');
+    process.exit(1);
+  }
 
-  if (apiSurge != null)       { multiplier = clamp(apiSurge); source = 'api'; }
-  else if (domSurge != null)  { multiplier = clamp(domSurge); source = 'dom'; }
+  let multiplier = null, price = apiPrice ?? domPrice, source = 'no_data';
+  if (apiSurge != null)      { multiplier = clamp(apiSurge);  source = 'api'; }
+  else if (domSurge != null) { multiplier = clamp(domSurge);  source = 'dom'; }
   else if (price != null) {
     if (!basePrices[district.id]) { basePrices[district.id] = price; multiplier = 1.0; source = 'baseline'; }
     else { multiplier = clamp(price / basePrices[district.id]); source = 'ratio'; }
   }
 
-  return { multiplier, price, source, error: lastError, capturedUrls: capturedUrls.length };
+  const netSummary = netLog.length ? netLog.join(' | ') : `no JSON captured (url=${finalUrl.slice(0,50)})`;
+  return { multiplier, price, source, netSummary, lastError };
 }
 
 function clamp(m) {
@@ -286,10 +358,11 @@ function clamp(m) {
 
 // ── Test mode ─────────────────────────────────────────────────────────────────
 async function runTest() {
-  console.log('=== TEST MODE (中西區) ===');
+  console.log('=== TEST MODE (中西區, DEBUG forced on) ===');
+  process.env.DEBUG = '1';
   const cookies = loadCookies();
-  if (!cookies) console.log('⚠ No cookies found — run --setup first for best results\n');
-  else console.log(`✓ Loaded ${cookies.length} saved cookies\n`);
+  if (!cookies) console.log('⚠ No cookies — run: node scraper.js --setup\n');
+  else console.log(`✓ Loaded ${cookies.length} cookies\n`);
   const browser = await launchBrowser();
   try {
     const r = await scrapeOne(browser, DISTRICTS[0], cookies);
@@ -301,7 +374,11 @@ async function runTest() {
 // ── Full scrape cycle ─────────────────────────────────────────────────────────
 async function runCycle() {
   const cookies = loadCookies();
-  console.log(`\n[scraper] ── Cycle ${new Date().toLocaleTimeString('zh-HK')} (cookies: ${cookies ? cookies.length : 'none'}) ──`);
+  console.log(`\n[scraper] ── Cycle ${new Date().toLocaleTimeString('zh-HK')} (cookies: ${cookies ? cookies.length : 'NONE — run --setup!'}) ──`);
+  if (!cookies) {
+    console.log('[scraper] Skipping: no cookies. Run: node scraper.js --setup');
+    return;
+  }
 
   const result = { updatedAt:new Date().toISOString(), status:'ok', liveCount:0, total:DISTRICTS.length, data:{} };
   let browser;
@@ -314,7 +391,10 @@ async function runCycle() {
         const r = await scrapeOne(browser, d, cookies);
         result.data[d.id] = { multiplier:r.multiplier, source:r.source, updatedAt:new Date().toISOString() };
         if (r.multiplier !== null) result.liveCount++;
-        console.log(r.multiplier !== null ? `${r.multiplier}x [${r.source}]` : `null [${r.source}] ${r.error||''}`);
+        const label = r.multiplier !== null
+          ? `${r.multiplier}x [${r.source}]`
+          : `null [${r.source}] — ${r.netSummary.slice(0,60)}`;
+        console.log(label);
       } catch (e) {
         result.data[d.id] = { multiplier:null, source:'error', updatedAt:new Date().toISOString() };
         console.log(`EXCEPTION: ${e.message}`);
@@ -333,7 +413,7 @@ async function runCycle() {
   if (GITHUB_TOKEN) {
     try { await pushSurgeJson(result); } catch (e) { console.error('[github] Push failed:', e.message); }
   } else {
-    console.log('[github] Skipped (no GITHUB_TOKEN)\n' + JSON.stringify(result, null, 2));
+    console.log('[github] Skipped (no GITHUB_TOKEN)\n' + JSON.stringify(result.data, null, 2));
   }
 }
 
@@ -348,10 +428,6 @@ if (SETUP_MODE) {
   runTest().catch(e => { console.error(e); process.exit(1); });
 } else {
   if (!GITHUB_TOKEN) { console.error('[error] GITHUB_TOKEN not set.\n  export GITHUB_TOKEN=ghp_xxx'); process.exit(1); }
-  const hasCookies = fs.existsSync(COOKIES_FILE);
-  if (!hasCookies) {
-    console.log('⚠ No cookies found. Run setup first:\n  node scraper.js --setup\n');
-  }
   console.log(`Map:  https://${GITHUB_OWNER}.github.io/${GITHUB_REPO}/`);
   console.log(`Tips: DEBUG=1 for verbose | --test for single district\n`);
   (async () => { await runCycle(); setInterval(runCycle, INTERVAL_MS); })();

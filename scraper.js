@@ -238,12 +238,20 @@ async function scrapeOne(browser, district) {
 
   await page.setRequestInterception(true);
   page.on('request', req => {
+    const u = req.url();
+    // Log pudoLocationSearch requests so we can learn the API format
+    if (DEBUG && u.includes('pudoLocationSearch')) {
+      console.log(`  [req] ${req.method()} ${u}`);
+      const body = req.postData();
+      if (body) console.log(`  [req-body] ${body.slice(0, 300)}`);
+    }
     if (['image','media','font'].includes(req.resourceType())) req.abort();
     else req.continue();
   });
 
   let apiSurge = null, apiPrice = null;
   let captchaFlag = false;
+  let priceApiRequest = null;  // capture the price estimate request for direct replay
 
   page.on('response', async resp => {
     const u = resp.url();
@@ -252,7 +260,10 @@ async function scrapeOne(browser, district) {
     if (!ct.includes('json')) return;
     let text = ''; try { text = await resp.text(); } catch (_) { return; }
     if (!text || text.length < 5) return;
-    if (DEBUG) { console.log(`  [net] ${resp.status()} ${u.slice(0,90)}`); if (text.length < 2000) console.log(`       ${text.slice(0,300)}`); }
+    if (DEBUG) {
+      console.log(`  [net] ${resp.status()} ${u.slice(0,90)}`);
+      if (text.length < 2000) console.log(`       ${text.slice(0,300)}`);
+    }
     const sm = text.match(/"surge_multiplier"\s*:\s*([\d.]+)/);
     const lp = text.match(/"low_estimate"\s*:\s*([\d.]+)/);
     const he = text.match(/"high_estimate"\s*:\s*([\d.]+)/);
@@ -456,21 +467,22 @@ async function runManual() {
     } catch (e) {
       console.log(`  [goto error] ${e.message.slice(0,60)}`);
     }
+    await new Promise(r => setTimeout(r, 2500));
 
     const finalUrl  = page.url();
     const pageTitle = await page.title().catch(() => '');
     console.log(`  Page: ${pageTitle.slice(0,50)}`);
-    console.log(`  URL:  ${finalUrl.slice(0,80)}`);
 
     if (finalUrl.includes('def.uber.com') || finalUrl.includes('/challenge')) {
-      console.log('  ⚠  CAPTCHA — please solve it in the browser window, then press ENTER.');
+      console.log('  ⚠  CAPTCHA — solve it in the browser, then press ENTER.');
     } else if (finalUrl.includes('/login') || finalUrl.includes('/signin')) {
-      console.log('  ⚠  Login page — please log in, then press ENTER.');
+      console.log('  ⚠  Login page — log in, then press ENTER.');
     } else {
-      // Auto-fill the form
-      await new Promise(r => setTimeout(r, 3000));
-      console.log(`  [form] Auto-filling: "${d.en}" → "${DROPOFF.en}"`);
-      await fillUberForm(page, d).catch(e => console.log(`  [form error] ${e.message}`));
+      console.log(`\n  ┌─ In the browser window:`);
+      console.log(`  │  取車地點 (Pickup) : ${d.en}`);
+      console.log(`  │  下車地點 (Dropoff): ${DROPOFF.en}`);
+      console.log(`  │  Then click  查看價格`);
+      console.log(`  └─ When prices appear, press ENTER here.`);
     }
 
     // Wait 4s for API responses to arrive after button click

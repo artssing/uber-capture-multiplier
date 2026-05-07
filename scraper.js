@@ -154,6 +154,84 @@ async function pushSurgeJson(payload) {
   console.log('[github] ✓ pushed');
 }
 
+// ── Fill Uber price estimate form ─────────────────────────────────────────────
+// Returns true if both fields were filled and "See prices" was clicked.
+async function fillUberForm(page, district) {
+  // Dump all visible inputs for debug
+  if (DEBUG) {
+    const inputs = await page.evaluate(() =>
+      [...document.querySelectorAll('input')].filter(el => el.offsetParent !== null).map(el => ({
+        ph: el.placeholder, label: el.getAttribute('aria-label'), name: el.name, id: el.id, val: el.value,
+      }))
+    );
+    console.log('  [inputs]', JSON.stringify(inputs));
+  }
+
+  // Pick visible inputs — first = pickup, second = dropoff
+  const inputHandles = await page.$$('input');
+  const visibleInputs = [];
+  for (const h of inputHandles) {
+    const visible = await h.evaluate(el => el.offsetParent !== null && el.type !== 'hidden');
+    if (visible) visibleInputs.push(h);
+    if (visibleInputs.length === 2) break;
+  }
+
+  if (visibleInputs.length < 2) {
+    if (DEBUG) console.log(`  [form] only ${visibleInputs.length} visible inputs found`);
+    return false;
+  }
+
+  async function typeAndPick(handle, text) {
+    await handle.click({ clickCount: 3 });
+    await handle.type('', { delay: 30 });  // clear
+    await page.keyboard.press('Control+a');
+    await page.keyboard.press('Backspace');
+    await handle.type(text, { delay: 70 });
+    if (DEBUG) console.log(`  [type] "${text}"`);
+
+    // Wait for autocomplete dropdown to appear
+    await new Promise(r => setTimeout(r, 2000));
+
+    // Try clicking the first suggestion
+    const picked = await page.evaluate(() => {
+      const opts = [
+        ...document.querySelectorAll('[role="option"], [data-testid*="suggestion"], [class*="suggestion"], li[id*="option"]'),
+      ];
+      if (opts.length > 0) { opts[0].click(); return opts[0].textContent.trim().slice(0,50); }
+      return null;
+    });
+
+    if (picked) {
+      if (DEBUG) console.log(`  [autocomplete] picked: ${picked}`);
+    } else {
+      // Fallback: arrow down + enter
+      await page.keyboard.press('ArrowDown');
+      await new Promise(r => setTimeout(r, 300));
+      await page.keyboard.press('Enter');
+      if (DEBUG) console.log('  [autocomplete] used ArrowDown+Enter fallback');
+    }
+    await new Promise(r => setTimeout(r, 800));
+  }
+
+  await typeAndPick(visibleInputs[0], district.en);
+  await typeAndPick(visibleInputs[1], DROPOFF.en);
+
+  // Click "See prices" / submit button
+  const clicked = await page.evaluate(() => {
+    const candidates = [
+      document.querySelector('button[data-testid*="submit"]'),
+      document.querySelector('button[type="submit"]'),
+      ...[...document.querySelectorAll('button,[role="button"]')]
+        .filter(b => /see prices|get estimate|查看|確認/i.test(b.textContent)),
+    ].filter(Boolean);
+    if (candidates[0]) { candidates[0].click(); return candidates[0].textContent.trim().slice(0,40); }
+    return null;
+  });
+  if (DEBUG) console.log(`  [click] ${clicked || 'no submit button'}`);
+
+  return !!clicked;
+}
+
 // ── Scrape one district ───────────────────────────────────────────────────────
 async function scrapeOne(browser, district) {
   const page = await browser.newPage();
@@ -182,11 +260,8 @@ async function scrapeOne(browser, district) {
     if ((lp || he) && apiPrice === null) apiPrice = lp ? parseFloat(lp[1]) : parseFloat(he[1]);
   });
 
-  // Navigate — use lat/lng params
-  const url = `https://www.uber.com/en-HK/price-estimate/` +
-    `?pickup_lat=${district.lat}&pickup_lng=${district.lng}` +
-    `&dropoff_lat=${DROPOFF.lat}&dropoff_lng=${DROPOFF.lng}`;
-
+  // Navigate to base estimate page (no params — SPA ignores them anyway)
+  const url = 'https://www.uber.com/en-HK/price-estimate/';
   let finalUrl = '', pageTitle = '', loaded = false, lastError = '';
 
   try {
@@ -194,7 +269,7 @@ async function scrapeOne(browser, district) {
     const status = resp ? resp.status() : 0;
     finalUrl  = page.url();
     pageTitle = await page.title().catch(() => '');
-    console.log(`         [${status}] ${pageTitle.slice(0,45)} — ${finalUrl.slice(0,65)}`);
+    console.log(`         [${status}] ${pageTitle.slice(0,45)} — ${finalUrl.slice(0,70)}`);
 
     if (captchaFlag || finalUrl.includes('def.uber.com')) {
       lastError = 'CAPTCHA';
@@ -203,53 +278,15 @@ async function scrapeOne(browser, district) {
     } else if (status === 403) {
       lastError = 'HTTP_403';
     } else {
+      // Wait for page to hydrate
       await new Promise(r => setTimeout(r, 3000));
 
-      // Check if form is empty (URL params not picked up) → type addresses
-      const formState = await page.evaluate(() => {
-        const inputs = [...document.querySelectorAll('input[placeholder], input[aria-label]')];
-        return inputs.map(i => ({ ph: i.placeholder || i.getAttribute('aria-label'), val: i.value }));
-      });
-      const isEmpty = formState.every(f => !f.val);
-      if (DEBUG) console.log(`  [form] empty=${isEmpty}`, formState.slice(0,3));
+      // Fill the form automatically
+      const formFilled = await fillUberForm(page, district);
+      if (DEBUG) console.log(`  [form] filled=${formFilled}`);
 
-      if (isEmpty && formState.length > 0) {
-        // Form is empty — type pickup address and select first suggestion
-        if (DEBUG) console.log(`  [form] typing addresses…`);
-        const pickupInput = await page.$('input[placeholder*="ickup"], input[aria-label*="ickup"], input[placeholder*="tart"], input[placeholder*="rom"]');
-        const dropInput   = await page.$('input[placeholder*="ropoff"], input[aria-label*="ropoff"], input[placeholder*="estination"], input[placeholder*="o"]');
-
-        if (pickupInput) {
-          await pickupInput.click({ clickCount: 3 });
-          await pickupInput.type(district.en, { delay: 60 });
-          await new Promise(r => setTimeout(r, 1500));
-          await page.keyboard.press('ArrowDown');
-          await page.keyboard.press('Enter');
-          await new Promise(r => setTimeout(r, 1000));
-        }
-        if (dropInput) {
-          await dropInput.click({ clickCount: 3 });
-          await dropInput.type(DROPOFF.en, { delay: 60 });
-          await new Promise(r => setTimeout(r, 1500));
-          await page.keyboard.press('ArrowDown');
-          await page.keyboard.press('Enter');
-          await new Promise(r => setTimeout(r, 1000));
-        }
-      }
-
-      // Click "See prices" button
-      const clicked = await page.evaluate(() => {
-        const byAttr = document.querySelector('button[data-testid*="submit"], button[type="submit"]');
-        if (byAttr) { byAttr.click(); return byAttr.textContent.trim().slice(0,40); }
-        const all = [...document.querySelectorAll('button,[role="button"]')];
-        const m = all.find(b => /see prices|get estimate|查看/i.test(b.textContent));
-        if (m) { m.click(); return m.textContent.trim().slice(0,40); }
-        return `none (${all.length} btns)`;
-      });
-      if (DEBUG) console.log(`  [click] ${clicked}`);
-
-      // Wait for price API response (up to 8s)
-      await new Promise(r => setTimeout(r, 8000));
+      // Wait for price API response (up to 10s)
+      await new Promise(r => setTimeout(r, 10000));
       loaded = true;
     }
   } catch (e) {
@@ -275,7 +312,6 @@ async function scrapeOne(browser, district) {
       });
       domSurge = r.surge; domPrice = r.price;
       if (DEBUG) console.log(`  [dom] surge=${domSurge} price=${domPrice}\n  [dom] ${r.snippet.slice(0,200)}`);
-      // Always show body when no data found (helps diagnose)
       if (!DEBUG && apiSurge === null && domSurge === null && domPrice === null) {
         console.log(`         body: ${r.snippet.slice(0,200)}`);
       }
@@ -415,12 +451,8 @@ async function runManual() {
     };
     page.on('response', responseHandler);
 
-    const url = `https://www.uber.com/en-HK/price-estimate/` +
-      `?pickup_lat=${d.lat}&pickup_lng=${d.lng}` +
-      `&dropoff_lat=${DROPOFF.lat}&dropoff_lng=${DROPOFF.lng}`;
-
     try {
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+      await page.goto('https://www.uber.com/en-HK/price-estimate/', { waitUntil: 'domcontentloaded', timeout: 25000 });
     } catch (e) {
       console.log(`  [goto error] ${e.message.slice(0,60)}`);
     }
@@ -431,22 +463,15 @@ async function runManual() {
     console.log(`  URL:  ${finalUrl.slice(0,80)}`);
 
     if (finalUrl.includes('def.uber.com') || finalUrl.includes('/challenge')) {
-      console.log('  ⚠  CAPTCHA detected in browser window — please solve it.');
+      console.log('  ⚠  CAPTCHA — please solve it in the browser window, then press ENTER.');
     } else if (finalUrl.includes('/login') || finalUrl.includes('/signin')) {
-      console.log('  ⚠  Login page — please log in.');
+      console.log('  ⚠  Login page — please log in, then press ENTER.');
+    } else {
+      // Auto-fill the form
+      await new Promise(r => setTimeout(r, 3000));
+      console.log(`  [form] Auto-filling: "${d.en}" → "${DROPOFF.en}"`);
+      await fillUberForm(page, d).catch(e => console.log(`  [form error] ${e.message}`));
     }
-
-    // Give page 3s to auto-populate from URL params, then try button click
-    await new Promise(r => setTimeout(r, 3000));
-    const clicked = await page.evaluate(() => {
-      const byAttr = document.querySelector('button[data-testid*="submit"], button[type="submit"]');
-      if (byAttr) { byAttr.click(); return byAttr.textContent.trim().slice(0,40); }
-      const all = [...document.querySelectorAll('button,[role="button"]')];
-      const m = all.find(b => /see prices|get estimate|查看/i.test(b.textContent));
-      if (m) { m.click(); return m.textContent.trim().slice(0,40); }
-      return null;
-    });
-    if (clicked) console.log(`  [click] ${clicked}`);
 
     // Wait 4s for API responses to arrive after button click
     await new Promise(r => setTimeout(r, 4000));

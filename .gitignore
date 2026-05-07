@@ -55,3 +55,5 @@ coverage/
 node_modules/
 package-lock.json
 .uber-cookies.json
+.uber-storage.json
+.uber-profile/

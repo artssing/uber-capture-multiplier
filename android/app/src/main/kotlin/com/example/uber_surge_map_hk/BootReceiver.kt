@@ -8,7 +8,7 @@ import android.util.Log
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
-            Log.d("OrderAssist", "Boot completed - accessibility service will be re-enabled by user")
+            Log.d("OrderAssist", "Boot completed — user must re-enable accessibility service manually.")
         }
     }
 }

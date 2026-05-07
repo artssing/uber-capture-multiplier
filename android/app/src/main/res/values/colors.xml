@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Backgrounds -->
+    <color name="bg_black">#FF000000</color>
+    <color name="bg_card">#FF1C1C1E</color>
+    <color name="bg_bar">#FF111111</color>
+
+    <!-- Accents -->
+    <color name="accent_blue">#FF276EF1</color>
+    <color name="accent_green">#FF34C759</color>
+    <color name="accent_red">#FFFF453A</color>
+    <color name="accent_yellow">#FFFFCC00</color>
+    <color name="accent_orange">#FFFF9F0A</color>
+    <color name="accent_cyan">#FF64D2FF</color>
+
+    <!-- Text -->
+    <color name="text_primary">#FFFFFFFF</color>
+    <color name="text_secondary">#AAFFFFFF</color>
+    <color name="text_tertiary">#66FFFFFF</color>
+    <color name="text_disabled">#33FFFFFF</color>
+
+    <!-- Borders -->
+    <color name="divider">#1AFFFFFF</color>
+    <color name="border_card">#26FFFFFF</color>
+</resources>

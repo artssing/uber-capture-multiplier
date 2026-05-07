@@ -1,0 +1,293 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/bg_black">
+
+    <!-- Toolbar -->
+    <androidx.appcompat.widget.Toolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="@color/bg_black"
+        app:title="搶單規則設定"
+        app:titleTextColor="@color/text_primary"
+        app:navigationIcon="@drawable/ic_arrow_back"/>
+
+    <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/divider"/>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:overScrollMode="never">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <!-- ===== FARE CONDITIONS ===== -->
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="車費條件" android:textColor="@color/text_tertiary"
+                android:textSize="12sp" android:textStyle="bold" android:letterSpacing="0.05"
+                android:layout_marginBottom="8dp"/>
+
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:background="@drawable/bg_card" android:padding="4dp">
+
+                <LinearLayout android:id="@+id/rowMinFare"
+                    android:layout_width="match_parent" android:layout_height="56dp"
+                    android:orientation="horizontal" android:gravity="center_vertical"
+                    android:paddingHorizontal="14dp">
+                    <ImageView android:layout_width="18dp" android:layout_height="18dp"
+                        android:src="@drawable/ic_payment" android:alpha="0.5"/>
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:layout_marginStart="10dp"
+                        style="@style/Widget.MaterialComponents.TextInputLayout.FilledBox.Dense"
+                        app:boxBackgroundColor="@color/bg_card" app:hintTextColor="@color/text_tertiary"
+                        app:boxStrokeColor="@color/bg_card">
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etMinFare" android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:hint="最低車費 (HK$)，不填則不限制"
+                            android:inputType="numberDecimal" android:textColor="@color/text_primary"
+                            android:textColorHint="@color/text_disabled" android:textSize="14sp"
+                            android:background="@null"/>
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+
+                <View android:layout_width="match_parent" android:layout_height="1dp"
+                    android:background="@color/divider" android:layout_marginHorizontal="14dp"/>
+
+                <LinearLayout android:id="@+id/rowMinFarePerKm"
+                    android:layout_width="match_parent" android:layout_height="56dp"
+                    android:orientation="horizontal" android:gravity="center_vertical"
+                    android:paddingHorizontal="14dp">
+                    <ImageView android:layout_width="18dp" android:layout_height="18dp"
+                        android:src="@drawable/ic_speed" android:alpha="0.5"/>
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:layout_marginStart="10dp"
+                        style="@style/Widget.MaterialComponents.TextInputLayout.FilledBox.Dense"
+                        app:boxBackgroundColor="@color/bg_card" app:hintTextColor="@color/text_tertiary"
+                        app:boxStrokeColor="@color/bg_card">
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etMinFarePerKm" android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:hint="最低每公里車費 (HK$/km)"
+                            android:inputType="numberDecimal" android:textColor="@color/text_primary"
+                            android:textColorHint="@color/text_disabled" android:textSize="14sp"
+                            android:background="@null"/>
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- ===== DISTANCE CONDITIONS ===== -->
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="距離條件" android:textColor="@color/text_tertiary"
+                android:textSize="12sp" android:textStyle="bold"
+                android:layout_marginTop="20dp" android:layout_marginBottom="8dp"/>
+
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:background="@drawable/bg_card" android:padding="4dp">
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="56dp"
+                    android:orientation="horizontal" android:gravity="center_vertical"
+                    android:paddingHorizontal="14dp">
+                    <ImageView android:layout_width="18dp" android:layout_height="18dp"
+                        android:src="@drawable/ic_near_me" android:alpha="0.5"/>
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:layout_marginStart="10dp"
+                        style="@style/Widget.MaterialComponents.TextInputLayout.FilledBox.Dense"
+                        app:boxBackgroundColor="@color/bg_card" app:hintTextColor="@color/text_tertiary"
+                        app:boxStrokeColor="@color/bg_card">
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etMaxPickupKm" android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:hint="最遠接客距離 (km)，預設5km"
+                            android:inputType="numberDecimal" android:textColor="@color/text_primary"
+                            android:textColorHint="@color/text_disabled" android:textSize="14sp"
+                            android:background="@null"/>
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+
+                <View android:layout_width="match_parent" android:layout_height="1dp"
+                    android:background="@color/divider" android:layout_marginHorizontal="14dp"/>
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="56dp"
+                    android:orientation="horizontal" android:gravity="center_vertical"
+                    android:paddingHorizontal="14dp">
+                    <ImageView android:layout_width="18dp" android:layout_height="18dp"
+                        android:src="@drawable/ic_route" android:alpha="0.5"/>
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:layout_marginStart="10dp"
+                        style="@style/Widget.MaterialComponents.TextInputLayout.FilledBox.Dense"
+                        app:boxBackgroundColor="@color/bg_card" app:hintTextColor="@color/text_tertiary"
+                        app:boxStrokeColor="@color/bg_card">
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etMinTripKm" android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:hint="最短行程距離 (km)，不填則不限制"
+                            android:inputType="numberDecimal" android:textColor="@color/text_primary"
+                            android:textColorHint="@color/text_disabled" android:textSize="14sp"
+                            android:background="@null"/>
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- ===== AREA FILTER ===== -->
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="地區過濾" android:textColor="@color/text_tertiary"
+                android:textSize="12sp" android:textStyle="bold"
+                android:layout_marginTop="20dp" android:layout_marginBottom="8dp"/>
+
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:background="@drawable/bg_card" android:padding="4dp">
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="56dp"
+                    android:orientation="horizontal" android:gravity="center_vertical"
+                    android:paddingHorizontal="14dp">
+                    <ImageView android:layout_width="18dp" android:layout_height="18dp"
+                        android:src="@drawable/ic_block" android:alpha="0.5"/>
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:layout_marginStart="10dp"
+                        style="@style/Widget.MaterialComponents.TextInputLayout.FilledBox.Dense"
+                        app:boxBackgroundColor="@color/bg_card" app:hintTextColor="@color/text_tertiary"
+                        app:boxStrokeColor="@color/bg_card">
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etBlacklist" android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:hint="黑名單地區，逗號分隔（例：元朗,天水圍）"
+                            android:inputType="text" android:textColor="@color/text_primary"
+                            android:textColorHint="@color/text_disabled" android:textSize="14sp"
+                            android:background="@null"/>
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+
+                <View android:layout_width="match_parent" android:layout_height="1dp"
+                    android:background="@color/divider" android:layout_marginHorizontal="14dp"/>
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="56dp"
+                    android:orientation="horizontal" android:gravity="center_vertical"
+                    android:paddingHorizontal="14dp">
+                    <ImageView android:layout_width="18dp" android:layout_height="18dp"
+                        android:src="@drawable/ic_check_circle" android:alpha="0.5"/>
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:layout_marginStart="10dp"
+                        style="@style/Widget.MaterialComponents.TextInputLayout.FilledBox.Dense"
+                        app:boxBackgroundColor="@color/bg_card" app:hintTextColor="@color/text_tertiary"
+                        app:boxStrokeColor="@color/bg_card">
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etWhitelist" android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:hint="白名單地區，逗號分隔（空白=所有地區）"
+                            android:inputType="text" android:textColor="@color/text_primary"
+                            android:textColorHint="@color/text_disabled" android:textSize="14sp"
+                            android:background="@null"/>
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- ===== AUTO-ACCEPT SETTINGS ===== -->
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="自動搶單設定" android:textColor="@color/text_tertiary"
+                android:textSize="12sp" android:textStyle="bold"
+                android:layout_marginTop="20dp" android:layout_marginBottom="8dp"/>
+
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:background="@drawable/bg_card" android:padding="4dp">
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="56dp"
+                    android:orientation="horizontal" android:gravity="center_vertical"
+                    android:paddingHorizontal="14dp">
+                    <ImageView android:layout_width="18dp" android:layout_height="18dp"
+                        android:src="@drawable/ic_timer" android:alpha="0.5"/>
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:layout_marginStart="10dp"
+                        style="@style/Widget.MaterialComponents.TextInputLayout.FilledBox.Dense"
+                        app:boxBackgroundColor="@color/bg_card" app:hintTextColor="@color/text_tertiary"
+                        app:boxStrokeColor="@color/bg_card">
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etAcceptDelay" android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:hint="搶單延遲 (毫秒)，建議 600-1200"
+                            android:inputType="number" android:textColor="@color/text_primary"
+                            android:textColorHint="@color/text_disabled" android:textSize="14sp"
+                            android:background="@null"/>
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Delay hint -->
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="延遲時間：彈單後多少毫秒點擊接單。太快可能被App偵測，建議 800-1200ms。"
+                android:textColor="@color/text_disabled" android:textSize="12sp"/>
+
+            <!-- ===== TARGET PACKAGES ===== -->
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="監控目標App套件名" android:textColor="@color/text_tertiary"
+                android:textSize="12sp" android:textStyle="bold"
+                android:layout_marginTop="20dp" android:layout_marginBottom="8dp"/>
+
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:background="@drawable/bg_card" android:padding="14dp">
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="horizontal" android:gravity="center_vertical">
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etNewPackage"
+                        android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:hint="新增套件名 (如 com.xxx.driver)"
+                        android:inputType="text" android:textColor="@color/text_primary"
+                        android:textColorHint="@color/text_disabled" android:textSize="13sp"
+                        android:background="@drawable/bg_input"/>
+                    <ImageView
+                        android:id="@+id/btnAddPackage"
+                        android:layout_width="36dp" android:layout_height="36dp"
+                        android:layout_marginStart="8dp"
+                        android:src="@drawable/ic_add_circle"
+                        android:colorFilter="@color/accent_blue"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:clickable="true" android:focusable="true"/>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/packagesContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:layout_marginTop="8dp"/>
+            </LinearLayout>
+
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="常見套件名：\n高德司機版: com.autonavi.amap.driver\n滴滴司機版: com.didi.driver"
+                android:textColor="@color/text_disabled" android:textSize="12sp"
+                android:lineSpacingExtra="3dp"/>
+
+            <!-- Save button -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnSave"
+                android:layout_width="match_parent" android:layout_height="54dp"
+                android:layout_marginTop="28dp" android:layout_marginBottom="40dp"
+                android:text="儲存設定"
+                android:textSize="16sp" android:textStyle="bold"
+                app:cornerRadius="12dp"
+                android:backgroundTint="@color/accent_blue"/>
+
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

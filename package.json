@@ -1,0 +1,16 @@
+{
+  "name": "uber-surge-map-hk",
+  "version": "1.0.0",
+  "description": "HK Uber surge map with web scraping backend",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "install-browser": "npx puppeteer browsers install chrome"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "puppeteer": "^22.0.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  }
+}

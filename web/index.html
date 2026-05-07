@@ -259,6 +259,51 @@
       line-height: 1.5;
     }
 
+    /* ── Source badge ── */
+    #source-badge {
+      position: absolute;
+      top: 62px; right: 16px;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      background: rgba(0,0,0,0.78);
+      border-radius: 14px;
+      font-size: 11px;
+      backdrop-filter: blur(6px);
+      border: 1px solid rgba(255,255,255,0.08);
+      transition: border-color 0.3s;
+    }
+    #source-badge.live { border-color: rgba(76,175,80,0.5); }
+    #source-badge.sim  { border-color: rgba(255,152,0,0.4); }
+    #source-badge.err  { border-color: rgba(244,67,54,0.5); }
+    .src-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: #666;
+      flex-shrink: 0;
+    }
+    .src-dot.live { background: #4CAF50; box-shadow: 0 0 6px #4CAF5088; }
+    .src-dot.sim  { background: #FF9800; }
+    .src-dot.err  { background: #F44336; }
+
+    /* ── Scrape progress bar ── */
+    #progress-bar-wrap {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 2px;
+      z-index: 1002;
+      background: rgba(255,255,255,0.06);
+      display: none;
+    }
+    #progress-bar {
+      height: 100%;
+      background: #276EF1;
+      transition: width 0.4s ease;
+      width: 0%;
+    }
+
     /* Leaflet overrides */
     .leaflet-control-zoom { display: none; }
     .leaflet-control-attribution {
@@ -283,9 +328,20 @@
   <div class="spacer"></div>
   <div class="chip" id="refresh-chip" onclick="forceRefresh()">
     <div id="refresh-icon" class="icon">↻</div>
-    <span id="refresh-label">每15秒更新</span>
+    <span id="refresh-label">每60秒更新</span>
   </div>
   <button id="settings-btn" onclick="openSettings()">⚙</button>
+</div>
+
+<!-- Data source badge -->
+<div id="source-badge" class="sim">
+  <div class="src-dot sim" id="src-dot"></div>
+  <span id="src-label">模擬數據</span>
+</div>
+
+<!-- Scrape progress bar -->
+<div id="progress-bar-wrap">
+  <div id="progress-bar"></div>
 </div>
 
 <!-- Legend -->
@@ -335,7 +391,7 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-// ── Hong Kong 18 Districts ──────────────────────────────────────────────────
+// ── Hong Kong 18 Districts ────────────────────────────────────────────────────
 const DISTRICTS = [
   { id:'central_western', cn:'中西區', en:'Central & Western',
     center:[22.2839,114.1521],
@@ -517,66 +573,155 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
+// ── Backend API polling ───────────────────────────────────────────────────────
+const API_URL = '/api/surge';
+let usingLiveData = false;
+let pollTimer = null;
+
+async function fetchLiveSurge() {
+  try {
+    const resp = await fetch(API_URL, { cache: 'no-store' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return await resp.json();
+  } catch (e) {
+    return null;
+  }
+}
+
+function applyLiveData(apiResp) {
+  const liveCount = Object.values(apiResp.data || {})
+    .filter(d => d.multiplier !== null && d.source !== 'error').length;
+
+  DISTRICTS.forEach(d => {
+    const entry = (apiResp.data || {})[d.id];
+    let m;
+    if (entry && entry.multiplier !== null) {
+      m = entry.multiplier;
+      usingLiveData = true;
+    } else {
+      // Fallback to simulation for this district
+      m = generateMultiplier(d.id);
+    }
+    surgeData[d.id] = m;
+    updateDistrictVisual(d.id, m);
+  });
+
+  if (selectedId) showDetail(selectedId);
+
+  // Update timestamp
+  const src = apiResp.lastUpdated ? new Date(apiResp.lastUpdated) : new Date();
+  const ts = `${pad(src.getHours())}:${pad(src.getMinutes())}:${pad(src.getSeconds())}`;
+  document.getElementById('timestamp').textContent = `上次更新: ${ts}`;
+
+  // Update source badge
+  updateSourceBadge(apiResp, liveCount);
+
+  // Progress bar during scrape
+  const isActive = apiResp.status === 'scraping';
+  document.getElementById('progress-bar-wrap').style.display = isActive ? 'block' : 'none';
+  if (isActive) {
+    const pct = apiResp.total > 0 ? (apiResp.scraped / apiResp.total) * 100 : 0;
+    document.getElementById('progress-bar').style.width = pct + '%';
+  }
+}
+
+function updateSourceBadge(apiResp, liveCount) {
+  const badge = document.getElementById('source-badge');
+  const dot   = document.getElementById('src-dot');
+  const label = document.getElementById('src-label');
+
+  badge.classList.remove('live', 'sim', 'err');
+  dot.classList.remove('live', 'sim', 'err');
+
+  if (apiResp.status === 'error') {
+    badge.classList.add('err'); dot.classList.add('err');
+    label.textContent = '爬取失敗 · 使用模擬';
+  } else if (liveCount >= 10) {
+    badge.classList.add('live'); dot.classList.add('live');
+    label.textContent = `uber.com · ${liveCount}/${DISTRICTS.length} 個區`;
+  } else if (liveCount > 0) {
+    badge.classList.add('sim'); dot.classList.add('sim');
+    label.textContent = `部分實時 (${liveCount}區) · 其餘模擬`;
+  } else if (apiResp.status === 'scraping') {
+    badge.classList.add('sim'); dot.classList.add('sim');
+    label.textContent = `爬取中 ${apiResp.scraped}/${apiResp.total}...`;
+  } else {
+    badge.classList.add('sim'); dot.classList.add('sim');
+    label.textContent = '模擬數據';
+  }
+}
+
+function updateDistrictVisual(id, m) {
+  const color = surgeColor(m);
+  const opac  = surgeOpacity(m);
+  const isSelected = selectedId === id;
+
+  polygonLayers[id].setStyle({
+    fillColor: color, fillOpacity: opac,
+    color: isSelected ? '#fff' : color,
+    weight: isSelected ? 2.5 : 1,
+    opacity: isSelected ? 1 : 0.65,
+  });
+
+  const el = document.getElementById(`label-${id}`);
+  if (el) {
+    el.textContent = m.toFixed(1) + 'x';
+    el.style.color = color;
+    el.style.borderColor = color + 'aa';
+  }
+}
+
 // ── Refresh logic ─────────────────────────────────────────────────────────────
-function refresh() {
+async function refresh() {
   setLoading(true);
-  setTimeout(() => {
+
+  const apiResp = await fetchLiveSurge();
+
+  if (apiResp) {
+    applyLiveData(apiResp);
+  } else {
+    // No backend → pure simulation fallback
     DISTRICTS.forEach(d => {
       const m = generateMultiplier(d.id);
       surgeData[d.id] = m;
-
-      const color = surgeColor(m);
-      const opac  = surgeOpacity(m);
-      const isSelected = selectedId === d.id;
-
-      polygonLayers[d.id].setStyle({
-        fillColor: color, fillOpacity: opac,
-        color: isSelected ? '#fff' : color,
-        weight: isSelected ? 2.5 : 1,
-        opacity: isSelected ? 1 : 0.65,
-      });
-
-      const el = document.getElementById(`label-${d.id}`);
-      if (el) {
-        el.textContent = m.toFixed(1) + 'x';
-        el.style.color = color;
-        el.style.borderColor = color + 'aa';
-      }
+      updateDistrictVisual(d.id, m);
     });
-
-    // Update detail card if a zone is selected
     if (selectedId) showDetail(selectedId);
-
     const now = new Date();
     const ts = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
     document.getElementById('timestamp').textContent = `上次更新: ${ts}`;
-    setLoading(false);
-  }, 280);
+
+    // Show sim badge
+    const badge = document.getElementById('source-badge');
+    const dot   = document.getElementById('src-dot');
+    badge.className = 'sim'; dot.className = 'src-dot sim';
+    document.getElementById('src-label').textContent = '模擬數據（無後端）';
+  }
+
+  setLoading(false);
 }
 
 function setLoading(on) {
   const icon = document.getElementById('refresh-icon');
-  if (on) {
-    icon.innerHTML = '<div class="spinner"></div>';
-  } else {
-    icon.innerHTML = '↻';
-  }
+  icon.innerHTML = on ? '<div class="spinner"></div>' : '↻';
 }
 
 function forceRefresh() { refresh(); }
 
+// Poll every 10s to catch backend scrape progress in real-time
+// (actual data only changes every 60s, but we show progress updates)
 function startTimer() {
-  if (refreshTimer) clearInterval(refreshTimer);
-  refreshTimer = setInterval(refresh, refreshInterval * 1000);
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(refresh, 10 * 1000);
 }
 
 function setRefreshInterval(secs) {
+  // Note: the server always scrapes every 60s; this setting is kept for UX
   refreshInterval = secs;
-  document.getElementById('refresh-label').textContent = `每${secs < 60 ? secs + '秒' : '1分鐘'}更新`;
+  document.getElementById('refresh-label').textContent = `每60秒更新`;
   document.querySelectorAll('.interval-btn').forEach(b => {
     b.classList.toggle('active', parseInt(b.dataset.secs) === secs);
   });
-  startTimer();
 }
 
 // ── District selection ────────────────────────────────────────────────────────
@@ -669,6 +814,8 @@ function pad(n) { return String(n).padStart(2, '0'); }
 // ── Boot ──────────────────────────────────────────────────────────────────────
 refresh();
 startTimer();
+// Also poll every 10s to reflect live scrape progress
+setInterval(refresh, 10000);
 </script>
 </body>
 </html>

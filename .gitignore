@@ -52,3 +52,5 @@ coverage/
 .idea/
 .vscode/
 *.swp
+node_modules/
+package-lock.json

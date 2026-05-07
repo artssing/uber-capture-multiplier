@@ -54,3 +54,4 @@ coverage/
 *.swp
 node_modules/
 package-lock.json
+.uber-cookies.json

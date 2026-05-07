@@ -1,25 +1,25 @@
-# Flutter/Dart
+# Flutter/Dart (legacy — kept for reference)
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
 .packages
 .pub-cache/
 .pub/
-build/
 *.iml
 *.ipr
 *.iws
 
-# Android
-**/android/**/gradle-wrapper.jar
+# Android build output
+build/
 **/android/.gradle
 **/android/captures/
-**/android/gradlew
-**/android/gradlew.bat
 **/android/local.properties
 **/android/**/GeneratedPluginRegistrant.java
 
-# iOS
+# NOTE: gradle-wrapper.jar, gradlew, gradlew.bat are intentionally tracked
+# They are required to build the native Android project.
+
+# iOS (not used — native Android only)
 **/ios/**/*.mode1v3
 **/ios/**/*.mode2v3
 **/ios/**/*.moved-aside
@@ -27,33 +27,24 @@ build/
 **/ios/**/*.perspectivev3
 **/ios/**xcuserdata
 **/ios/.generated/
-**/ios/Flutter/App.framework
-**/ios/Flutter/Flutter.framework
-**/ios/Flutter/Flutter.podspec
-**/ios/Flutter/Generated.xcconfig
-**/ios/Flutter/app.flx
-**/ios/Flutter/app.zip
-**/ios/Flutter/flutter_assets/
+**/ios/Flutter/
 **/ios/ServiceDefinitions.json
 **/ios/Runner/GeneratedPluginRegistrant.*
 **/ios/Podfile.lock
-
-# Xcode
 **/ios/**/*.xcworkspace
 !**/ios/Runner.xcworkspace
-
-# macOS
 **/macos/Flutter/GeneratedPluginRegistrant.swift
-
-# Coverage
-coverage/
 
 # IDE
 .idea/
 .vscode/
 *.swp
+
+# Node (legacy scraper scripts)
 node_modules/
 package-lock.json
+
+# Local secrets / cookies
 .uber-cookies.json
 .uber-storage.json
 .uber-profile/

@@ -5,7 +5,10 @@
  * First-time setup (visible browser, log in once):
  *   node scraper.js --setup
  *
- * Normal operation:
+ * Manual scrape (pause on each district, fix CAPTCHA by hand):
+ *   GITHUB_TOKEN=ghp_xxx node scraper.js --manual
+ *
+ * Normal automated operation:
  *   GITHUB_TOKEN=ghp_xxx node scraper.js
  *
  * Debug single district:
@@ -27,7 +30,18 @@ const INTERVAL_MS   = 60_000;
 const DEBUG         = process.env.DEBUG === '1';
 const SETUP_MODE    = process.argv.includes('--setup');
 const TEST_MODE     = process.argv.includes('--test');
+const MANUAL_MODE   = process.argv.includes('--manual');
 const PROFILE_DIR   = path.join(__dirname, '.uber-profile');
+
+// Wait for the user to press ENTER in the terminal
+function waitForEnter(prompt) {
+  process.stdout.write(prompt);
+  return new Promise(resolve => {
+    if (process.stdin.setRawMode) process.stdin.setRawMode(false);
+    process.stdin.resume();
+    process.stdin.once('data', () => { process.stdin.pause(); resolve(); });
+  });
+}
 
 // ── Districts ─────────────────────────────────────────────────────────────────
 const DISTRICTS = [
@@ -355,6 +369,146 @@ async function runCycle() {
   }
 }
 
+// ── Manual mode ───────────────────────────────────────────────────────────────
+// Visits each district one by one with a VISIBLE browser.
+// If CAPTCHA / empty form / no data → pauses and lets you fix it manually.
+// Press ENTER to capture whatever is on screen and move to the next district.
+async function runManual() {
+  console.log('\n╔══════════════════════════════════════════════════════════╗');
+  console.log('║  MANUAL MODE — interactive scrape                        ║');
+  console.log('╠══════════════════════════════════════════════════════════╣');
+  console.log('║  Browser opens for each district.                        ║');
+  console.log('║  If CAPTCHA / empty page appears, fix it manually.       ║');
+  console.log('║  When prices are visible, press ENTER to capture & next. ║');
+  console.log('║  Press ENTER immediately to skip a district.             ║');
+  console.log('╚══════════════════════════════════════════════════════════╝\n');
+
+  fs.mkdirSync(PROFILE_DIR, { recursive: true });
+  const browser = await puppeteer.launch(launchOpts(true));  // forSetup=true → larger window
+  const page = await browser.newPage();
+
+  await page.setRequestInterception(true);
+  page.on('request', req => {
+    if (['image','media','font'].includes(req.resourceType())) req.abort();
+    else req.continue();
+  });
+
+  const results = {};
+
+  for (let i = 0; i < DISTRICTS.length; i++) {
+    const d = DISTRICTS[i];
+    console.log(`\n── ${i+1}/${DISTRICTS.length} ${d.cn} (${d.en}) ──`);
+
+    // Reset per-district API listeners
+    let apiSurge = null, apiPrice = null;
+    const responseHandler = async resp => {
+      const u = resp.url();
+      if (u.includes('def.uber.com')) return;
+      const ct = resp.headers()['content-type'] || '';
+      if (!ct.includes('json')) return;
+      let text = ''; try { text = await resp.text(); } catch (_) { return; }
+      const sm = text.match(/"surge_multiplier"\s*:\s*([\d.]+)/);
+      const lp = text.match(/"low_estimate"\s*:\s*([\d.]+)/);
+      const he = text.match(/"high_estimate"\s*:\s*([\d.]+)/);
+      if (sm && apiSurge === null) { apiSurge = parseFloat(sm[1]); console.log(`  [net] ✓ surge=${apiSurge}`); }
+      if ((lp || he) && apiPrice === null) apiPrice = lp ? parseFloat(lp[1]) : parseFloat(he[1]);
+    };
+    page.on('response', responseHandler);
+
+    const url = `https://www.uber.com/en-HK/price-estimate/` +
+      `?pickup_lat=${d.lat}&pickup_lng=${d.lng}` +
+      `&dropoff_lat=${DROPOFF.lat}&dropoff_lng=${DROPOFF.lng}`;
+
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+    } catch (e) {
+      console.log(`  [goto error] ${e.message.slice(0,60)}`);
+    }
+
+    const finalUrl  = page.url();
+    const pageTitle = await page.title().catch(() => '');
+    console.log(`  Page: ${pageTitle.slice(0,50)}`);
+    console.log(`  URL:  ${finalUrl.slice(0,80)}`);
+
+    if (finalUrl.includes('def.uber.com') || finalUrl.includes('/challenge')) {
+      console.log('  ⚠  CAPTCHA detected in browser window — please solve it.');
+    } else if (finalUrl.includes('/login') || finalUrl.includes('/signin')) {
+      console.log('  ⚠  Login page — please log in.');
+    }
+
+    // Give page 3s to auto-populate from URL params, then try button click
+    await new Promise(r => setTimeout(r, 3000));
+    const clicked = await page.evaluate(() => {
+      const byAttr = document.querySelector('button[data-testid*="submit"], button[type="submit"]');
+      if (byAttr) { byAttr.click(); return byAttr.textContent.trim().slice(0,40); }
+      const all = [...document.querySelectorAll('button,[role="button"]')];
+      const m = all.find(b => /see prices|get estimate|查看/i.test(b.textContent));
+      if (m) { m.click(); return m.textContent.trim().slice(0,40); }
+      return null;
+    });
+    if (clicked) console.log(`  [click] ${clicked}`);
+
+    // Wait 4s for API responses to arrive after button click
+    await new Promise(r => setTimeout(r, 4000));
+
+    // Show what we have so far
+    if (apiSurge !== null) {
+      console.log(`  ✓ API data: surge=${apiSurge} price=${apiPrice}`);
+    } else {
+      console.log('  No API data yet — check browser window.');
+    }
+
+    // Always pause for user confirmation
+    await waitForEnter('  Press ENTER to capture & continue (or fix browser first)... ');
+
+    // Capture whatever is currently on screen
+    page.off('response', responseHandler);
+    let domSurge = null, domPrice = null;
+    try {
+      const r = await page.evaluate(() => {
+        const body = document.body.innerText || '';
+        const scripts = [...document.querySelectorAll('script')].map(s => s.textContent).join('\n');
+        const all = body + '\n' + scripts;
+        const sm = all.match(/"surge_multiplier"\s*:\s*([\d.]+)/) || body.match(/(\d+\.\d+)\s*[×xX]/);
+        const pr = all.match(/"low_estimate"\s*:\s*([\d.]+)/) || body.match(/HK\$\s*(\d+(?:\.\d+)?)/);
+        return { surge: sm ? parseFloat(sm[1]) : null, price: pr ? parseFloat(pr[1]) : null };
+      });
+      domSurge = r.surge; domPrice = r.price;
+    } catch (_) {}
+
+    let multiplier = null, price = apiPrice ?? domPrice, source = 'no_data';
+    if (apiSurge != null)      { multiplier = clamp(apiSurge);  source = 'api'; }
+    else if (domSurge != null) { multiplier = clamp(domSurge);  source = 'dom'; }
+    else if (price != null) {
+      if (!basePrices[d.id]) { basePrices[d.id] = price; multiplier = 1.0; source = 'baseline'; }
+      else { multiplier = clamp(price / basePrices[d.id]); source = 'ratio'; }
+    }
+
+    results[d.id] = { multiplier, source, updatedAt: new Date().toISOString() };
+    console.log(`  → ${multiplier !== null ? multiplier + 'x [' + source + ']' : 'null [' + source + ']'}`);
+  }
+
+  await browser.close();
+
+  const payload = {
+    updatedAt: new Date().toISOString(),
+    status: Object.values(results).some(r => r.multiplier !== null) ? 'ok' : 'simulated',
+    liveCount: Object.values(results).filter(r => r.multiplier !== null).length,
+    total: DISTRICTS.length,
+    data: results,
+  };
+
+  console.log(`\n[manual] Done — ${payload.liveCount}/${payload.total} captured`);
+
+  if (GITHUB_TOKEN) {
+    try { await pushSurgeJson(payload); console.log('[github] ✓ surge.json pushed'); }
+    catch (e) { console.error('[github] Push failed:', e.message); }
+  } else {
+    console.log('\n[result] ' + JSON.stringify(payload, null, 2));
+    console.log('\nSet GITHUB_TOKEN to push to GitHub Pages.');
+  }
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 console.log('╔════════════════════════════════════════╗');
 console.log('║   HK Surge Map — Local Scraper         ║');
@@ -364,6 +518,8 @@ if (SETUP_MODE) {
   runSetup().catch(e => { console.error(e); process.exit(1); });
 } else if (TEST_MODE) {
   runTest().catch(e => { console.error(e); process.exit(1); });
+} else if (MANUAL_MODE) {
+  runManual().catch(e => { console.error(e); process.exit(1); });
 } else {
   if (!GITHUB_TOKEN) { console.error('[error] Set GITHUB_TOKEN=ghp_xxx'); process.exit(1); }
   console.log(`Map:  https://${GITHUB_OWNER}.github.io/${GITHUB_REPO}/`);

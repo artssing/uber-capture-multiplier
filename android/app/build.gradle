@@ -20,7 +20,7 @@ android {
 
     defaultConfig {
         applicationId "com.example.uber_surge_map_hk"
-        minSdk flutter.minSdkVersion
+        minSdk 23
         targetSdk flutter.targetSdkVersion
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName

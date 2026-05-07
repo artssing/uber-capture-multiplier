@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">搶單助手</string>
+    <string name="accessibility_service_description">監控司機App的新訂單彈窗，根據您設定的條件自動搶單。此服務需要讀取屏幕內容以識別訂單資訊。</string>
+</resources>

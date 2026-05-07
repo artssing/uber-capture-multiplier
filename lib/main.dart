@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'providers/surge_provider.dart';
+import 'providers/order_provider.dart';
 import 'screens/home_screen.dart';
 
 void main() {
@@ -18,18 +18,18 @@ void main() {
       systemNavigationBarIconBrightness: Brightness.light,
     ),
   );
-  runApp(const UberSurgeMapApp());
+  runApp(const OrderAssistApp());
 }
 
-class UberSurgeMapApp extends StatelessWidget {
-  const UberSurgeMapApp({super.key});
+class OrderAssistApp extends StatelessWidget {
+  const OrderAssistApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      create: (_) => SurgeProvider(),
+      create: (_) => OrderProvider(),
       child: MaterialApp(
-        title: 'HK Surge Map',
+        title: '搶單助手',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           brightness: Brightness.dark,

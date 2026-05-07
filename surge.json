@@ -1,26 +1,98 @@
 {
-  "updatedAt": "2026-05-07T13:50:39Z",
+  "updatedAt": "2026-05-07T14:02:21.062Z",
   "status": "simulated",
   "liveCount": 0,
   "total": 18,
   "data": {
-    "central_western": {"multiplier": null, "source": "pending"},
-    "wan_chai": {"multiplier": null, "source": "pending"},
-    "eastern": {"multiplier": null, "source": "pending"},
-    "southern": {"multiplier": null, "source": "pending"},
-    "yau_tsim_mong": {"multiplier": null, "source": "pending"},
-    "sham_shui_po": {"multiplier": null, "source": "pending"},
-    "kowloon_city": {"multiplier": null, "source": "pending"},
-    "wong_tai_sin": {"multiplier": null, "source": "pending"},
-    "kwun_tong": {"multiplier": null, "source": "pending"},
-    "tsuen_wan": {"multiplier": null, "source": "pending"},
-    "kwai_tsing": {"multiplier": null, "source": "pending"},
-    "tuen_mun": {"multiplier": null, "source": "pending"},
-    "yuen_long": {"multiplier": null, "source": "pending"},
-    "north": {"multiplier": null, "source": "pending"},
-    "tai_po": {"multiplier": null, "source": "pending"},
-    "sha_tin": {"multiplier": null, "source": "pending"},
-    "sai_kung": {"multiplier": null, "source": "pending"},
-    "islands": {"multiplier": null, "source": "pending"}
+    "central_western": {
+      "multiplier": null,
+      "source": "error",
+      "updatedAt": "2026-05-07T14:02:42.096Z"
+    },
+    "wan_chai": {
+      "multiplier": null,
+      "source": "error",
+      "updatedAt": "2026-05-07T14:02:48.360Z"
+    },
+    "eastern": {
+      "multiplier": null,
+      "source": "error",
+      "updatedAt": "2026-05-07T14:02:55.271Z"
+    },
+    "southern": {
+      "multiplier": null,
+      "source": "error",
+      "updatedAt": "2026-05-07T14:03:06.966Z"
+    },
+    "yau_tsim_mong": {
+      "multiplier": null,
+      "source": "error",
+      "updatedAt": "2026-05-07T14:03:14.013Z"
+    },
+    "sham_shui_po": {
+      "multiplier": null,
+      "source": "error",
+      "updatedAt": "2026-05-07T14:03:25.749Z"
+    },
+    "kowloon_city": {
+      "multiplier": null,
+      "source": "error",
+      "updatedAt": "2026-05-07T14:03:31.760Z"
+    },
+    "wong_tai_sin": {
+      "multiplier": null,
+      "source": "error",
+      "updatedAt": "2026-05-07T14:03:37.010Z"
+    },
+    "kwun_tong": {
+      "multiplier": null,
+      "source": "error",
+      "updatedAt": "2026-05-07T14:03:42.690Z"
+    },
+    "tsuen_wan": {
+      "multiplier": null,
+      "source": "error",
+      "updatedAt": "2026-05-07T14:03:47.971Z"
+    },
+    "kwai_tsing": {
+      "multiplier": null,
+      "source": "error",
+      "updatedAt": "2026-05-07T14:03:53.673Z"
+    },
+    "tuen_mun": {
+      "multiplier": null,
+      "source": "error",
+      "updatedAt": "2026-05-07T14:04:00.400Z"
+    },
+    "yuen_long": {
+      "multiplier": null,
+      "source": "error",
+      "updatedAt": "2026-05-07T14:04:06.248Z"
+    },
+    "north": {
+      "multiplier": null,
+      "source": "error",
+      "updatedAt": "2026-05-07T14:04:12.443Z"
+    },
+    "tai_po": {
+      "multiplier": null,
+      "source": "error",
+      "updatedAt": "2026-05-07T14:04:18.352Z"
+    },
+    "sha_tin": {
+      "multiplier": null,
+      "source": "error",
+      "updatedAt": "2026-05-07T14:04:24.825Z"
+    },
+    "sai_kung": {
+      "multiplier": null,
+      "source": "error",
+      "updatedAt": "2026-05-07T14:04:30.463Z"
+    },
+    "islands": {
+      "multiplier": null,
+      "source": "error",
+      "updatedAt": "2026-05-07T14:04:36.426Z"
+    }
   }
 }

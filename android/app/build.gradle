@@ -15,11 +15,27 @@ android {
         versionName "1.0"
     }
 
+    flavorDimensions "mode"
+
+    productFlavors {
+        production {
+            dimension "mode"
+            buildConfigField "boolean", "IS_MOCK", "false"
+        }
+        mock {
+            dimension "mode"
+            applicationIdSuffix ".mock"
+            versionNameSuffix "-mock"
+            buildConfigField "boolean", "IS_MOCK", "true"
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
+        debug {}
     }
 
     compileOptions {
@@ -33,6 +49,7 @@ android {
 
     buildFeatures {
         viewBinding true
+        buildConfig true
     }
 }
 
@@ -48,3 +65,4 @@ dependencies {
     implementation 'androidx.core:core-ktx:1.15.0'
     implementation 'com.google.code.gson:gson:2.11.0'
 }
+

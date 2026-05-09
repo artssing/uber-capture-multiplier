@@ -13,6 +13,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.example.uber_surge_map_hk.adapter.OrderHistoryAdapter
 import com.example.uber_surge_map_hk.databinding.ActivityMainBinding
+import com.example.uber_surge_map_hk.mock.MockOrderSimulator
 import com.example.uber_surge_map_hk.model.FilterRules
 import com.example.uber_surge_map_hk.model.OrderModel
 import com.example.uber_surge_map_hk.model.OrderResult
@@ -34,6 +35,7 @@ class MainActivity : AppCompatActivity() {
         setupClickListeners()
         setupRecyclerView()
         observeViewModel()
+        setupMockBanner()
     }
 
     override fun onResume() {
@@ -41,6 +43,17 @@ class MainActivity : AppCompatActivity() {
         // Re-check accessibility each time user returns (they may have just enabled it)
         val enabled = isAccessibilityEnabled()
         com.example.uber_surge_map_hk.repository.OrderRepository.serviceEnabled.postValue(enabled)
+    }
+
+    // ── Mock banner ───────────────────────────────────────────────────────────
+
+    private fun setupMockBanner() {
+        if (!BuildConfig.IS_MOCK) return
+        binding.mockBanner.visibility = View.VISIBLE
+        binding.tvAppName.text = "搶單助手  [MOCK]"
+        binding.btnTriggerOrder.setOnClickListener {
+            MockOrderSimulator.triggerNow()
+        }
     }
 
     // ── Setup ─────────────────────────────────────────────────────────────────

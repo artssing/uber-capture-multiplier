@@ -89,6 +89,15 @@ object OrderRepository {
         liveOrder.postValue(order)
     }
 
+    fun onOrderRejectedByFilter(order: OrderModel) {
+        order.result = OrderResult.REJECTED
+        replaceInHistory(order)
+        // Only clear live card if this order is still the one being shown
+        if (liveOrder.value?.id == order.id) {
+            liveOrder.postValue(null)
+        }
+    }
+
     // ── UI actions ───────────────────────────────────────────────────────────
     fun dismissLiveOrder() {
         val o = liveOrder.value

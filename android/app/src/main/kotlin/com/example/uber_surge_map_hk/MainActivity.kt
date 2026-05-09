@@ -157,7 +157,7 @@ class MainActivity : AppCompatActivity() {
         overCard.root.findViewById<TextView>(R.id.tvPermDesc)?.text  = "允許搶單助手在其他App上方顯示資訊（可選）"
 
         // Setup guide visible only when accessibility is off
-        binding.setupGuideCard.visibility = if (enabled) View.GONE else View.VISIBLE
+        binding.setupGuideCard.root.setVisibility(if (enabled) View.GONE else View.VISIBLE)
     }
 
     private fun updateAutoAcceptButton(enabled: Boolean) {

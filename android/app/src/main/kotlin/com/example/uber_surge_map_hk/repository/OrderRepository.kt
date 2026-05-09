@@ -9,6 +9,11 @@ import com.example.uber_surge_map_hk.model.OrderResult
 
 object OrderRepository {
 
+    val DEFAULT_PACKAGES = listOf(
+        "com.autonavi.amap.driver",
+        "com.amap.android.driver"
+    )
+
     // ── Live data observed by UI ─────────────────────────────────────────────
     val liveOrder       = MutableLiveData<OrderModel?>(null)
     val orderHistory    = MutableLiveData<List<OrderModel>>(emptyList())
@@ -31,11 +36,6 @@ object OrderRepository {
     private const val KEY_WHITELIST     = "whitelist_keywords"
     private const val KEY_DELAY_MS      = "accept_delay_ms"
     private const val KEY_PACKAGES      = "target_packages"
-
-    val DEFAULT_PACKAGES = listOf(
-        "com.autonavi.amap.driver",
-        "com.amap.android.driver"
-    )
 
     // ── Init from SharedPreferences ──────────────────────────────────────────
     fun init(ctx: Context) {
@@ -110,7 +110,7 @@ object OrderRepository {
     private fun addToHistory(order: OrderModel) {
         _history.removeAll { it.id == order.id }
         _history.add(0, order)
-        if (_history.size > 300) _history.removeLast()
+        if (_history.size > 300) _history.removeAt(_history.lastIndex)
         orderHistory.postValue(_history.toList())
     }
 

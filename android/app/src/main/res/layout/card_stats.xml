@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
@@ -22,7 +23,7 @@
             android:layout_width="20dp"
             android:layout_height="20dp"
             android:src="@drawable/ic_visibility"
-            android:colorFilter="@color/accent_cyan"/>
+            app:tint="@color/accent_cyan"/>
         <TextView
             android:id="@+id/tvStatsDetected"
             android:layout_width="wrap_content"
@@ -51,7 +52,7 @@
             android:layout_width="20dp"
             android:layout_height="20dp"
             android:src="@drawable/ic_flash"
-            android:colorFilter="@color/accent_green"/>
+            app:tint="@color/accent_green"/>
         <TextView
             android:id="@+id/tvStatsAccepted"
             android:layout_width="wrap_content"
@@ -80,7 +81,7 @@
             android:layout_width="20dp"
             android:layout_height="20dp"
             android:src="@drawable/ic_timer"
-            android:colorFilter="@color/accent_orange"/>
+            app:tint="@color/accent_orange"/>
         <TextView
             android:id="@+id/tvStatsDelay"
             android:layout_width="wrap_content"

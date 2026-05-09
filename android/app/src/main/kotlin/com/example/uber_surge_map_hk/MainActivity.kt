@@ -11,6 +11,7 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.uber_surge_map_hk.adapter.OrderHistoryAdapter
 import com.example.uber_surge_map_hk.databinding.ActivityMainBinding
 import com.example.uber_surge_map_hk.mock.MockOrderSimulator
@@ -116,6 +117,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupRecyclerView() {
+        binding.rvHistory.layoutManager = LinearLayoutManager(this)
         binding.rvHistory.adapter = historyAdapter
         binding.rvHistory.itemAnimator = null
     }

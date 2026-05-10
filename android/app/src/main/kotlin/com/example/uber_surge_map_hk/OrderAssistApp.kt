@@ -2,6 +2,7 @@ package com.example.uber_surge_map_hk
 
 import android.app.Application
 import com.example.uber_surge_map_hk.mock.MockOrderSimulator
+import com.example.uber_surge_map_hk.monitor.OkgoLogcatMonitor
 import com.example.uber_surge_map_hk.repository.OrderRepository
 
 class OrderAssistApp : Application() {
@@ -13,6 +14,8 @@ class OrderAssistApp : Application() {
             // mark service as "enabled" so the UI shows the monitoring state.
             OrderRepository.serviceEnabled.postValue(true)
             MockOrderSimulator.start()
+        } else {
+            OkgoLogcatMonitor.start(this)
         }
     }
 }

@@ -1,0 +1,160 @@
+package com.example.uber_surge_map_hk.monitor
+
+import android.content.Context
+import android.content.pm.PackageManager
+import android.util.Log
+import com.example.uber_surge_map_hk.model.OrderModel
+import com.example.uber_surge_map_hk.repository.OrderRepository
+import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.util.UUID
+
+/**
+ * Reads OKGO's native WebSocket logs from logcat in real-time.
+ * Requires READ_LOGS permission, which must be granted once via adb:
+ *   adb shell pm grant com.example.uber_surge_map_hk android.permission.READ_LOGS
+ *
+ * Parses grabResultPush messages to extract:
+ *   - driverOrderPrice  → fare (HKD)
+ *   - mileage           → pickup distance (metres → km)
+ *   - duration          → pickup ETA (minutes)
+ *   - orderId           → deduplication key
+ */
+object OkgoLogcatMonitor {
+
+    private const val TAG = "OkgoLogcat"
+    private const val READ_LOGS = "android.permission.READ_LOGS"
+
+    @Volatile private var running = false
+    private var readerThread: Thread? = null
+    private var lastOrderId = ""
+
+    fun isPermissionGranted(ctx: Context): Boolean =
+        ctx.checkSelfPermission(READ_LOGS) == PackageManager.PERMISSION_GRANTED
+
+    fun start(ctx: Context) {
+        if (running) return
+        if (!isPermissionGranted(ctx)) {
+            Log.w(TAG, "READ_LOGS not granted — logcat monitor disabled.\n" +
+                    "Grant with: adb shell pm grant ${ctx.packageName} android.permission.READ_LOGS")
+            OrderRepository.logcatMonitorState.postValue(LogcatState.NO_PERMISSION)
+            return
+        }
+        running = true
+        readerThread = Thread({ readLoop() }, "okgo-logcat").apply {
+            isDaemon = true
+            start()
+        }
+        Log.d(TAG, "Logcat monitor started")
+        OrderRepository.logcatMonitorState.postValue(LogcatState.RUNNING)
+    }
+
+    fun stop() {
+        running = false
+        readerThread?.interrupt()
+        readerThread = null
+        OrderRepository.logcatMonitorState.postValue(LogcatState.STOPPED)
+    }
+
+    // ── Reader loop ───────────────────────────────────────────────────────────
+
+    private fun readLoop() {
+        var process: Process? = null
+        try {
+            // Filter to LIBCONNECTION tag only — OKGO's native TCP/WebSocket library
+            process = Runtime.getRuntime().exec(
+                arrayOf("logcat", "-v", "raw", "-s", "LIBCONNECTION:I")
+            )
+            val reader = BufferedReader(InputStreamReader(process.inputStream))
+            Log.d(TAG, "Logcat process started, reading…")
+            while (running) {
+                val line = reader.readLine() ?: break
+                if (line.contains("grabResultPush") && line.contains("driverOrderPrice")) {
+                    parseOrderLine(line)
+                }
+            }
+        } catch (e: InterruptedException) {
+            // normal shutdown
+        } catch (e: Exception) {
+            Log.e(TAG, "Logcat read error: ${e.message}")
+            OrderRepository.logcatMonitorState.postValue(LogcatState.ERROR)
+        } finally {
+            process?.destroy()
+        }
+    }
+
+    // ── Order parsing ─────────────────────────────────────────────────────────
+
+    private fun parseOrderLine(line: String) {
+        try {
+            // Line format:
+            // session::receive inner =====> down msg: ..., id=grabResultPush_..., body={JSON}
+            val bodyIdx = line.indexOf("body=")
+            if (bodyIdx < 0) return
+            val jsonStr = line.substring(bodyIdx + 5).trim()
+            val obj = JSONObject(jsonStr)
+
+            // operateType 1 = new order push
+            if (obj.optInt("operateType", -1) != 1) return
+
+            val orderId = obj.optString("orderId").takeIf { it.isNotEmpty() } ?: return
+            if (orderId == lastOrderId) return   // already processed
+            lastOrderId = orderId
+
+            val fare = obj.optDouble("driverOrderPrice", 0.0)
+
+            // mileage is pickup distance in metres; duration is ETA in minutes
+            var pickupKm = 0.0
+            var etaMinutes = 0
+            runCatching {
+                val matchMap = obj.getJSONObject("matchInfoMap")
+                val driverId = matchMap.keys().next()
+                val dir = matchMap.getJSONObject(driverId).getJSONObject("driverDirection")
+                pickupKm = dir.getDouble("mileage") / 1000.0
+                etaMinutes = dir.optInt("duration", 0)
+            }
+
+            val mainTag = runCatching {
+                obj.getJSONArray("mainTag").optString(0, "")
+            }.getOrDefault("")
+
+            val rawLog = buildString {
+                appendLine("═══ OKGO logcat 訂單 ═══")
+                appendLine("orderId:    $orderId")
+                appendLine("車費:       HK\$${"%.2f".format(fare)}")
+                appendLine("接客距離:   ${"%.3f".format(pickupKm)} km")
+                appendLine("接客預計:   ${etaMinutes} 分鐘")
+                if (mainTag.isNotEmpty()) appendLine("訂單類型:   $mainTag")
+                appendLine("─── 原始 JSON ───")
+                appendLine(jsonStr)
+            }
+
+            val order = OrderModel(
+                id                 = UUID.randomUUID().toString(),
+                fare               = fare,
+                tripDistanceKm     = 0.0,        // not in grabResultPush payload
+                pickupDistanceKm   = pickupKm,
+                pickupAddress      = "",          // not in grabResultPush payload
+                destinationAddress = "",
+                timestampMs        = System.currentTimeMillis(),
+                rawLog             = rawLog
+            )
+
+            Log.d(TAG, "Order: HK\$$fare, pickup=${pickupKm}km, eta=${etaMinutes}min [id=$orderId]")
+            OrderRepository.onOrderDetected(order)
+
+            val rules = OrderRepository.filterRules.value ?: return
+            when {
+                rules.debugMode && rules.passes(order) ->
+                    OrderRepository.onOrderAwaitingManualAccept(order)
+                !rules.debugMode && rules.autoAcceptEnabled && rules.passes(order) ->
+                    OrderRepository.schedulePendingAccept(order)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Parse error on line: ${e.message}")
+        }
+    }
+}
+
+enum class LogcatState { STOPPED, RUNNING, NO_PERMISSION, ERROR }

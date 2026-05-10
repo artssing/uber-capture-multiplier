@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import com.example.uber_surge_map_hk.model.FilterRules
 import com.example.uber_surge_map_hk.model.OrderModel
 import com.example.uber_surge_map_hk.repository.OrderRepository
+import com.example.uber_surge_map_hk.monitor.OkgoLogcatMonitor
 
 class OrderViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -16,6 +17,7 @@ class OrderViewModel(app: Application) : AndroidViewModel(app) {
     val filterRules         = OrderRepository.filterRules
     val targetPackages      = OrderRepository.targetPackages
     val pendingDebugOrder   = OrderRepository.pendingDebugOrder
+    val logcatMonitorState  = OrderRepository.logcatMonitorState
 
     fun dismissLiveOrder()  = OrderRepository.dismissLiveOrder()
     fun clearHistory()      = OrderRepository.clearHistory()

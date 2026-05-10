@@ -6,6 +6,7 @@ import androidx.lifecycle.MutableLiveData
 import com.example.uber_surge_map_hk.model.FilterRules
 import com.example.uber_surge_map_hk.model.OrderModel
 import com.example.uber_surge_map_hk.model.OrderResult
+import com.example.uber_surge_map_hk.monitor.LogcatState
 
 object OrderRepository {
 
@@ -23,6 +24,10 @@ object OrderRepository {
     val filterRules         = MutableLiveData(FilterRules())
     val targetPackages      = MutableLiveData<List<String>>(DEFAULT_PACKAGES)
     val pendingDebugOrder   = MutableLiveData<OrderModel?>(null)
+    // Order the accessibility service should auto-click next
+    val pendingAccept       = MutableLiveData<OrderModel?>(null)
+    // Status of the logcat monitor (shown in UI)
+    val logcatMonitorState  = MutableLiveData(LogcatState.STOPPED)
 
     private val _history = mutableListOf<OrderModel>()
 
@@ -116,6 +121,15 @@ object OrderRepository {
 
     fun dismissPendingDebug() {
         pendingDebugOrder.postValue(null)
+    }
+
+    // ── Logcat monitor: schedule accessibility service to click accept ────────
+    fun schedulePendingAccept(order: OrderModel) {
+        pendingAccept.postValue(order)
+    }
+
+    fun clearPendingAccept() {
+        pendingAccept.postValue(null)
     }
 
     // ── UI actions ───────────────────────────────────────────────────────────

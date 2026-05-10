@@ -64,18 +64,47 @@ object OkgoLogcatMonitor {
     private fun readLoop() {
         var process: Process? = null
         try {
-            // Filter to LIBCONNECTION tag only — OKGO's native TCP/WebSocket library
+            // Use :V (Verbose) instead of :I so we don't miss Debug-level OKGO messages.
+            // Use -v tag format so each line carries "D/LIBCONNECTION: ..." — visible in our logs.
             process = Runtime.getRuntime().exec(
-                arrayOf("logcat", "-v", "raw", "-s", "LIBCONNECTION:I")
+                arrayOf("logcat", "-v", "tag", "-s", "LIBCONNECTION:V")
             )
+
+            // Drain stderr in background so it never blocks the reader thread
+            val errStream = process.errorStream
+            Thread({
+                errStream.bufferedReader().forEachLine { Log.w(TAG, "logcat stderr: $it") }
+            }, "okgo-logcat-err").apply { isDaemon = true; start() }
+
             val reader = BufferedReader(InputStreamReader(process.inputStream))
-            Log.d(TAG, "Logcat process started, reading…")
+            Log.d(TAG, "Logcat process started (LIBCONNECTION:V), reading…")
+
+            var lineCount = 0
+            var grabCount = 0
+
             while (running) {
                 val line = reader.readLine() ?: break
+                lineCount++
+
+                // Heartbeat every 200 lines so we know the reader is alive
+                if (lineCount % 200 == 0) {
+                    Log.d(TAG, "[heartbeat] lines=$lineCount  grabResultPush hits=$grabCount")
+                }
+
+                // Log any line that mentions "grab" at verbose level for visibility
+                if (line.contains("grab", ignoreCase = true)) {
+                    Log.v(TAG, "[grab line] $line")
+                    grabCount++
+                }
+
                 if (line.contains("grabResultPush") && line.contains("driverOrderPrice")) {
                     parseOrderLine(line)
+                } else if (line.contains("grabResultPush")) {
+                    // grabResultPush present but no driverOrderPrice — log for diagnosis
+                    Log.w(TAG, "[no driverOrderPrice] $line")
                 }
             }
+            Log.d(TAG, "Reader loop ended. Total lines=$lineCount  grabResultPush hits=$grabCount")
         } catch (e: InterruptedException) {
             // normal shutdown
         } catch (e: Exception) {
@@ -112,8 +141,12 @@ object OkgoLogcatMonitor {
             val jsonStr = line.substring(bodyIdx + 5).trim()
             val obj = JSONObject(jsonStr)
 
-            // operateType 1 = new order push
-            if (obj.optInt("operateType", -1) != 1) return
+            // operateType 1 = new order push; log others so we can see what values OKGO uses
+            val operateType = obj.optInt("operateType", -1)
+            if (operateType != 1) {
+                Log.w(TAG, "[skip] grabResultPush with operateType=$operateType (expected 1)")
+                return
+            }
 
             val orderId = obj.optString("orderId").takeIf { it.isNotEmpty() } ?: return
             if (orderId == lastOrderId) return   // already processed

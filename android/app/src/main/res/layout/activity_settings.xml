@@ -274,7 +274,7 @@
 
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
-                android:text="常見套件名：\n高德地圖（含司機端）:\n  com.autonavi.minimap\n高德司機端（備用）:\n  com.autonavi.amap.driver\n花小猪司機端:\n  com.huaxiaozhu.driver\n曹操出行司機端:\n  cn.caocaokeji.dcdriver\n哈囉車主:\n  com.hellobike.majia"
+                android:text="常見套件名：\n高德地圖（含司機端）:\n  com.autonavi.minimap\n高德地圖車機版:\n  com.autonavi.amapauto\n高德司機端（備用）:\n  com.autonavi.amap.driver\n花小猪司機端:\n  com.huaxiaozhu.driver\n曹操出行司機端:\n  cn.caocaokeji.dcdriver\n哈囉車主:\n  com.hellobike.majia"
                 android:textColor="@color/text_disabled" android:textSize="12sp"
                 android:lineSpacingExtra="3dp"/>
 

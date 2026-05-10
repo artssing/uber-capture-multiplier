@@ -12,6 +12,8 @@ object OrderRepository {
     val DEFAULT_PACKAGES = listOf(
         // 高德地圖主程序（高德車主司機端內建於此 App）
         "com.autonavi.minimap",
+        // 高德地圖車機版（車載屏幕版，部分地區包含司機端）
+        "com.autonavi.amapauto",
         // 部分地區獨立司機端（若存在）
         "com.autonavi.amap.driver",
         "com.amap.android.driver",

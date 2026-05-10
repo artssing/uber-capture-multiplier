@@ -199,5 +199,19 @@
             </LinearLayout>
         </LinearLayout>
 
+        <!-- View raw log (visible in debug mode) -->
+        <TextView
+            android:id="@+id/btnViewLog"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="查看原始Log ›"
+            android:textColor="@color/accent_blue"
+            android:textSize="12sp"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:visibility="gone"/>
+
     </LinearLayout>
 </LinearLayout>

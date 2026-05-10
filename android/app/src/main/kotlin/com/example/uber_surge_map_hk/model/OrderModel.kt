@@ -22,6 +22,7 @@ data class OrderModel(
     val pickupAddress: String,
     val destinationAddress: String,
     val timestampMs: Long,
+    val rawLog: String = "",
     var result: OrderResult = OrderResult.PENDING
 ) {
     val farePerKm: Double get() = if (tripDistanceKm > 0) fare / tripDistanceKm else 0.0

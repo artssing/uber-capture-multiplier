@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.View
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
@@ -41,7 +42,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Re-check accessibility each time user returns (they may have just enabled it)
         val enabled = isAccessibilityEnabled()
         com.example.uber_surge_map_hk.repository.OrderRepository.serviceEnabled.postValue(enabled)
     }
@@ -70,7 +70,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupClickListeners() {
-        // Auto-accept toggle
         binding.btnAutoAccept.setOnClickListener {
             val rules = vm.filterRules.value ?: FilterRules()
             val newVal = !rules.autoAcceptEnabled
@@ -79,12 +78,10 @@ class MainActivity : AppCompatActivity() {
             updateAutoAcceptButton(newVal)
         }
 
-        // Settings
         binding.btnSettings.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
-        // Permission cards
         binding.cardPermAccessibility.root.findViewById<View>(R.id.btnPermAction)?.setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
@@ -95,17 +92,18 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Live order dismiss
         binding.liveOrderCard.btnDismissOrder.setOnClickListener {
             vm.dismissLiveOrder()
         }
 
-        // Rules summary "Edit"
+        binding.liveOrderCard.btnViewLog.setOnClickListener {
+            vm.liveOrder.value?.let { showLogDialog(it) }
+        }
+
         binding.rulesSummaryCard.tvEditRules.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
-        // History clear
         binding.btnClearHistory.setOnClickListener {
             AlertDialog.Builder(this, R.style.AlertDialogDark)
                 .setTitle("清除記錄")
@@ -120,6 +118,7 @@ class MainActivity : AppCompatActivity() {
         binding.rvHistory.layoutManager = LinearLayoutManager(this)
         binding.rvHistory.adapter = historyAdapter
         binding.rvHistory.itemAnimator = null
+        historyAdapter.onItemClick = { order -> showLogDialog(order) }
     }
 
     // ── Observe ───────────────────────────────────────────────────────────────
@@ -132,6 +131,9 @@ class MainActivity : AppCompatActivity() {
         vm.totalAutoAccepted.observe(this) { binding.statsCard.tvStatsAccepted.text = "$it" }
         vm.filterRules.observe(this) { binding.statsCard.tvStatsDelay.text = "${it.acceptDelayMs}ms" }
         vm.orderHistory.observe(this) { list -> onHistoryChanged(list) }
+        vm.pendingDebugOrder.observe(this) { order ->
+            if (order != null) showDebugConfirmDialog(order)
+        }
     }
 
     // ── UI updates ────────────────────────────────────────────────────────────
@@ -153,25 +155,21 @@ class MainActivity : AppCompatActivity() {
             tvStat.setTextColor(ContextCompat.getColor(this, R.color.accent_red))
         }
 
-        // Show/hide permission section
         val needsPerms = !enabled || !isOverlayPermissionGranted()
         binding.permissionSection.visibility = if (needsPerms) View.VISIBLE else View.GONE
 
-        // Set up accessibility permission card
         val accCard = binding.cardPermAccessibility
         accCard.root.findViewById<TextView>(R.id.tvPermTitle)?.text = "無障礙服務"
         accCard.root.findViewById<TextView>(R.id.tvPermDesc)?.text  = "用於偵測司機App訂單並自動點擊接單"
         accCard.root.findViewById<View>(R.id.btnPermAction)?.visibility =
             if (enabled) View.GONE else View.VISIBLE
 
-        // Set up overlay permission card
         val overlayGranted = isOverlayPermissionGranted()
         val overCard = binding.cardPermOverlay
         overCard.root.visibility = if (overlayGranted) View.GONE else View.VISIBLE
         overCard.root.findViewById<TextView>(R.id.tvPermTitle)?.text = "懸浮視窗權限"
         overCard.root.findViewById<TextView>(R.id.tvPermDesc)?.text  = "允許搶單助手在其他App上方顯示資訊（可選）"
 
-        // Setup guide visible only when accessibility is off
         binding.setupGuideCard.root.setVisibility(if (enabled) View.GONE else View.VISIBLE)
     }
 
@@ -190,7 +188,9 @@ class MainActivity : AppCompatActivity() {
     private fun onRulesChanged(rules: FilterRules) {
         updateAutoAcceptButton(rules.autoAcceptEnabled)
 
-        // Rebuild rule chips
+        // Debug mode banner
+        binding.debugBanner.visibility = if (rules.debugMode) View.VISIBLE else View.GONE
+
         val chipGroup = binding.rulesSummaryCard.rulesChipsLayout
         chipGroup.removeAllViews()
 
@@ -206,6 +206,8 @@ class MainActivity : AppCompatActivity() {
             setChipStrokeColorResource(android.R.color.transparent)
         }
 
+        if (rules.debugMode)
+            chipGroup.addView(chip("DEBUG", R.drawable.bg_chip_orange, R.color.accent_orange))
         if (rules.minFare > 0)
             chipGroup.addView(chip("最低 HK\$${rules.minFare.toInt()}", R.drawable.bg_chip_blue, R.color.accent_blue))
         chipGroup.addView(chip("接客 ≤ ${rules.maxPickupKm}km", R.drawable.bg_chip_blue, R.color.accent_blue))
@@ -249,48 +251,43 @@ class MainActivity : AppCompatActivity() {
         )
         card.btnDismissOrder.visibility = if (accepted) View.GONE else View.VISIBLE
 
-        // Fare chip
         card.tvFareChip.text = if (order.fare > 0) "HK$${String.format("%.1f", order.fare)}" else "未知車費"
 
-        // Trip distance
         if (order.tripDistanceKm > 0) {
             card.tvTripDistChip.visibility = View.VISIBLE
             card.tvTripDistChip.text = "${String.format("%.1f", order.tripDistanceKm)} km"
         } else card.tvTripDistChip.visibility = View.GONE
 
-        // Pickup distance
         if (order.pickupDistanceKm > 0) {
             card.tvPickupDistChip.visibility = View.VISIBLE
             card.tvPickupDistChip.text = "接客 ${String.format("%.1f", order.pickupDistanceKm)} km"
         } else card.tvPickupDistChip.visibility = View.GONE
 
-        // Fare/km
         if (order.farePerKm > 0) {
             card.tvFarePerKm.visibility = View.VISIBLE
             card.tvFarePerKm.text = "HK$${String.format("%.1f", order.farePerKm)}/km"
         } else card.tvFarePerKm.visibility = View.GONE
 
-        // Pickup address
         if (order.pickupAddress.isNotEmpty()) {
             card.pickupRow.visibility = View.VISIBLE
             card.tvPickupAddress.text = order.pickupAddress
         } else card.pickupRow.visibility = View.GONE
 
-        // Destination address
         if (order.destinationAddress.isNotEmpty()) {
             card.destinationRow.visibility = View.VISIBLE
             card.tvDestAddress.text = order.destinationAddress
         } else card.destinationRow.visibility = View.GONE
+
+        card.btnViewLog.visibility = if (order.rawLog.isNotEmpty()) View.VISIBLE else View.GONE
     }
 
     private fun onHistoryChanged(list: List<OrderModel>) {
         val hasItems = list.isNotEmpty()
-        binding.rvHistory.visibility  = if (hasItems) View.VISIBLE else View.GONE
+        binding.rvHistory.visibility   = if (hasItems) View.VISIBLE else View.GONE
         binding.emptyHistory.visibility = if (hasItems) View.GONE  else View.VISIBLE
         binding.btnClearHistory.visibility = if (hasItems) View.VISIBLE else View.GONE
         historyAdapter.submitList(list.toList())
 
-        // Update history stats bar
         val detected  = vm.totalDetected.value ?: 0
         val accepted  = vm.totalAutoAccepted.value ?: 0
         val rate      = if (detected > 0) (accepted * 100 / detected) else 0
@@ -302,6 +299,120 @@ class MainActivity : AppCompatActivity() {
         binding.tvHistAccepted.text = "$accepted\n自動接單"
         binding.tvHistRate.text     = "$rate%\n接單率"
         binding.tvHistEarnings.text = "HK$${earnings.toInt()}\n估算收入"
+    }
+
+    // ── Debug dialogs ─────────────────────────────────────────────────────────
+
+    private fun showDebugConfirmDialog(order: OrderModel) {
+        val rules = vm.filterRules.value ?: FilterRules()
+        val summary = buildString {
+            appendLine("車費:   HK$${String.format("%.1f", order.fare)}")
+            if (order.tripDistanceKm > 0)
+                appendLine("行程:   ${String.format("%.1f", order.tripDistanceKm)} km")
+            if (order.pickupDistanceKm > 0)
+                appendLine("接客:   ${String.format("%.1f", order.pickupDistanceKm)} km")
+            if (order.farePerKm > 0)
+                appendLine("每公里: HK$${String.format("%.1f", order.farePerKm)}/km")
+            if (order.pickupAddress.isNotEmpty())
+                appendLine("上車:   ${order.pickupAddress}")
+            if (order.destinationAddress.isNotEmpty())
+                appendLine("目的地: ${order.destinationAddress}")
+            appendLine()
+            appendLine("── 篩選結果 ──")
+            append(buildFilterResult(order, rules))
+        }
+
+        AlertDialog.Builder(this, R.style.AlertDialogDark)
+            .setTitle("⚡ 訂單符合條件 — 請手動接單")
+            .setMessage(summary.trim())
+            .setPositiveButton("去OKGO搶單") { _, _ ->
+                vm.onOrderManualAccepted(order)
+                launchOkgo()
+            }
+            .setNeutralButton("查看原始Log") { _, _ ->
+                vm.dismissPendingDebug()
+                showLogDialog(order)
+            }
+            .setNegativeButton("跳過此單") { _, _ ->
+                vm.dismissPendingDebug()
+            }
+            .setCancelable(false)
+            .show()
+    }
+
+    private fun showLogDialog(order: OrderModel) {
+        val logText = if (order.rawLog.isNotEmpty()) order.rawLog else "(此訂單無原始Log記錄)"
+
+        val tv = TextView(this).apply {
+            text = logText
+            textSize = 12f
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
+            setPadding(48, 32, 48, 32)
+            setTextIsSelectable(true)
+            typeface = android.graphics.Typeface.MONOSPACE
+        }
+        val scroll = ScrollView(this).apply { addView(tv) }
+
+        val title = buildString {
+            append("訂單Log")
+            if (order.fare > 0) append(" — HK$${String.format("%.1f", order.fare)}")
+            append(" [${order.result.label()}]")
+        }
+
+        AlertDialog.Builder(this, R.style.AlertDialogDark)
+            .setTitle(title)
+            .setView(scroll)
+            .setPositiveButton("關閉", null)
+            .show()
+    }
+
+    private fun buildFilterResult(order: OrderModel, rules: FilterRules): String = buildString {
+        if (rules.minFare > 0) {
+            if (order.fare > 0 && order.fare >= rules.minFare)
+                appendLine("✓ 車費 HK$${String.format("%.1f", order.fare)} ≥ 最低 HK$${rules.minFare.toInt()}")
+            else
+                appendLine("✗ 車費 HK$${String.format("%.1f", order.fare)} < 最低 HK$${rules.minFare.toInt()}")
+        }
+        if (rules.maxPickupKm > 0 && order.pickupDistanceKm > 0) {
+            if (order.pickupDistanceKm <= rules.maxPickupKm)
+                appendLine("✓ 接客 ${order.pickupDistanceKm}km ≤ ${rules.maxPickupKm}km")
+            else
+                appendLine("✗ 接客 ${order.pickupDistanceKm}km > ${rules.maxPickupKm}km")
+        }
+        if (rules.minTripKm > 0 && order.tripDistanceKm > 0) {
+            if (order.tripDistanceKm >= rules.minTripKm)
+                appendLine("✓ 行程 ${order.tripDistanceKm}km ≥ ${rules.minTripKm}km")
+            else
+                appendLine("✗ 行程 ${order.tripDistanceKm}km < ${rules.minTripKm}km")
+        }
+        if (rules.minFarePerKm > 0 && order.farePerKm > 0) {
+            if (order.farePerKm >= rules.minFarePerKm)
+                appendLine("✓ 每公里 HK$${String.format("%.1f", order.farePerKm)} ≥ HK$${rules.minFarePerKm.toInt()}")
+            else
+                appendLine("✗ 每公里 HK$${String.format("%.1f", order.farePerKm)} < HK$${rules.minFarePerKm.toInt()}")
+        }
+        val addr = "${order.pickupAddress} ${order.destinationAddress}"
+        rules.blacklistList.filter { it.isNotEmpty() }.forEach { kw ->
+            if (addr.contains(kw)) appendLine("✗ 黑名單命中：$kw")
+        }
+        if (rules.whitelistList.isNotEmpty()) {
+            if (rules.whitelistList.any { addr.contains(it) })
+                appendLine("✓ 白名單符合")
+            else
+                appendLine("✗ 白名單不符")
+        }
+    }
+
+    private fun launchOkgo() {
+        val intent = packageManager.getLaunchIntentForPackage("www.okgo.sj")
+        if (intent != null) {
+            startActivity(intent)
+        } else {
+            AlertDialog.Builder(this, R.style.AlertDialogDark)
+                .setMessage("未安裝 OKGO App，請先安裝")
+                .setPositiveButton("關閉", null)
+                .show()
+        }
     }
 
     // ── Tab switching ─────────────────────────────────────────────────────────

@@ -18,6 +18,8 @@ import java.util.Locale
 class OrderHistoryAdapter :
     ListAdapter<OrderModel, OrderHistoryAdapter.VH>(DIFF) {
 
+    var onItemClick: ((OrderModel) -> Unit)? = null
+
     private val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
@@ -26,7 +28,11 @@ class OrderHistoryAdapter :
         return VH(v)
     }
 
-    override fun onBindViewHolder(h: VH, pos: Int) = h.bind(getItem(pos), timeFmt)
+    override fun onBindViewHolder(h: VH, pos: Int) {
+        val order = getItem(pos)
+        h.bind(order, timeFmt)
+        h.itemView.setOnClickListener { onItemClick?.invoke(order) }
+    }
 
     class VH(v: View) : RecyclerView.ViewHolder(v) {
         private val iconBg    = v.findViewById<View>(R.id.statusIconBg)

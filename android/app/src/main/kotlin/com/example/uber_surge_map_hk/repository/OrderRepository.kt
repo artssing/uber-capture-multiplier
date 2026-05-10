@@ -15,33 +15,36 @@ object OrderRepository {
     )
 
     // ── Live data observed by UI ─────────────────────────────────────────────
-    val liveOrder       = MutableLiveData<OrderModel?>(null)
-    val orderHistory    = MutableLiveData<List<OrderModel>>(emptyList())
-    val serviceEnabled  = MutableLiveData(false)
-    val totalDetected   = MutableLiveData(0)
-    val totalAutoAccepted = MutableLiveData(0)
-    val filterRules     = MutableLiveData(FilterRules())
-    val targetPackages  = MutableLiveData<List<String>>(DEFAULT_PACKAGES)
+    val liveOrder           = MutableLiveData<OrderModel?>(null)
+    val orderHistory        = MutableLiveData<List<OrderModel>>(emptyList())
+    val serviceEnabled      = MutableLiveData(false)
+    val totalDetected       = MutableLiveData(0)
+    val totalAutoAccepted   = MutableLiveData(0)
+    val filterRules         = MutableLiveData(FilterRules())
+    val targetPackages      = MutableLiveData<List<String>>(DEFAULT_PACKAGES)
+    val pendingDebugOrder   = MutableLiveData<OrderModel?>(null)
 
     private val _history = mutableListOf<OrderModel>()
 
     // ── Prefs keys ───────────────────────────────────────────────────────────
-    private const val PREFS = "order_assistant_prefs"
-    private const val KEY_AUTO_ACCEPT   = "auto_accept_enabled"
-    private const val KEY_MIN_FARE      = "min_fare"
-    private const val KEY_MAX_PICKUP    = "max_pickup_km"
-    private const val KEY_MIN_TRIP      = "min_trip_km"
+    private const val PREFS              = "order_assistant_prefs"
+    private const val KEY_AUTO_ACCEPT    = "auto_accept_enabled"
+    private const val KEY_DEBUG_MODE     = "debug_mode"
+    private const val KEY_MIN_FARE       = "min_fare"
+    private const val KEY_MAX_PICKUP     = "max_pickup_km"
+    private const val KEY_MIN_TRIP       = "min_trip_km"
     private const val KEY_MIN_FARE_PER_KM = "min_fare_per_km"
-    private const val KEY_BLACKLIST     = "blacklist_keywords"
-    private const val KEY_WHITELIST     = "whitelist_keywords"
-    private const val KEY_DELAY_MS      = "accept_delay_ms"
-    private const val KEY_PACKAGES      = "target_packages"
+    private const val KEY_BLACKLIST      = "blacklist_keywords"
+    private const val KEY_WHITELIST      = "whitelist_keywords"
+    private const val KEY_DELAY_MS       = "accept_delay_ms"
+    private const val KEY_PACKAGES       = "target_packages"
 
     // ── Init from SharedPreferences ──────────────────────────────────────────
     fun init(ctx: Context) {
         val p = prefs(ctx)
         filterRules.value = FilterRules(
             autoAcceptEnabled = p.getBoolean(KEY_AUTO_ACCEPT, false),
+            debugMode         = p.getBoolean(KEY_DEBUG_MODE, false),
             minFare           = p.getFloat(KEY_MIN_FARE, 0f).toDouble(),
             maxPickupKm       = p.getFloat(KEY_MAX_PICKUP, 5f).toDouble(),
             minTripKm         = p.getFloat(KEY_MIN_TRIP, 0f).toDouble(),
@@ -58,14 +61,15 @@ object OrderRepository {
     fun saveRules(ctx: Context, rules: FilterRules) {
         filterRules.postValue(rules)
         prefs(ctx).edit().apply {
-            putBoolean(KEY_AUTO_ACCEPT,   rules.autoAcceptEnabled)
-            putFloat(KEY_MIN_FARE,        rules.minFare.toFloat())
-            putFloat(KEY_MAX_PICKUP,      rules.maxPickupKm.toFloat())
-            putFloat(KEY_MIN_TRIP,        rules.minTripKm.toFloat())
-            putFloat(KEY_MIN_FARE_PER_KM, rules.minFarePerKm.toFloat())
-            putString(KEY_BLACKLIST,      rules.blacklistKeywords)
-            putString(KEY_WHITELIST,      rules.whitelistKeywords)
-            putInt(KEY_DELAY_MS,          rules.acceptDelayMs)
+            putBoolean(KEY_AUTO_ACCEPT,    rules.autoAcceptEnabled)
+            putBoolean(KEY_DEBUG_MODE,     rules.debugMode)
+            putFloat(KEY_MIN_FARE,         rules.minFare.toFloat())
+            putFloat(KEY_MAX_PICKUP,       rules.maxPickupKm.toFloat())
+            putFloat(KEY_MIN_TRIP,         rules.minTripKm.toFloat())
+            putFloat(KEY_MIN_FARE_PER_KM,  rules.minFarePerKm.toFloat())
+            putString(KEY_BLACKLIST,       rules.blacklistKeywords)
+            putString(KEY_WHITELIST,       rules.whitelistKeywords)
+            putInt(KEY_DELAY_MS,           rules.acceptDelayMs)
             apply()
         }
     }
@@ -92,10 +96,26 @@ object OrderRepository {
     fun onOrderRejectedByFilter(order: OrderModel) {
         order.result = OrderResult.REJECTED
         replaceInHistory(order)
-        // Only clear live card if this order is still the one being shown
         if (liveOrder.value?.id == order.id) {
             liveOrder.postValue(null)
         }
+    }
+
+    // ── Debug mode: order passed filter, awaiting manual accept ──────────────
+    fun onOrderAwaitingManualAccept(order: OrderModel) {
+        pendingDebugOrder.postValue(order)
+    }
+
+    fun onOrderManualAccepted(order: OrderModel) {
+        totalAutoAccepted.postValue((totalAutoAccepted.value ?: 0) + 1)
+        order.result = OrderResult.MANUAL_ACCEPTED
+        replaceInHistory(order)
+        pendingDebugOrder.postValue(null)
+        liveOrder.postValue(order)
+    }
+
+    fun dismissPendingDebug() {
+        pendingDebugOrder.postValue(null)
     }
 
     // ── UI actions ───────────────────────────────────────────────────────────

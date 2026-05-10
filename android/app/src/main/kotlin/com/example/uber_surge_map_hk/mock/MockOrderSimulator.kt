@@ -77,23 +77,27 @@ object MockOrderSimulator {
         OrderRepository.onOrderDetected(order)
 
         val rules = OrderRepository.filterRules.value
-        if (rules != null && rules.autoAcceptEnabled && rules.passes(order)) {
-            // Accept after the configured delay
-            handler.postDelayed({
-                OrderRepository.onOrderAutoAccepted(order)
-            }, rules.acceptDelayMs.toLong())
-        } else {
-            // Not accepted — mark REJECTED and clear live card after a few seconds
-            handler.postDelayed({
-                OrderRepository.onOrderRejectedByFilter(order)
-            }, REJECT_DISPLAY_MS)
+        when {
+            rules != null && rules.debugMode && rules.passes(order) -> {
+                // Debug mode: notify user to manually accept
+                OrderRepository.onOrderAwaitingManualAccept(order)
+            }
+            rules != null && !rules.debugMode && rules.autoAcceptEnabled && rules.passes(order) -> {
+                handler.postDelayed({
+                    OrderRepository.onOrderAutoAccepted(order)
+                }, rules.acceptDelayMs.toLong())
+            }
+            else -> {
+                handler.postDelayed({
+                    OrderRepository.onOrderRejectedByFilter(order)
+                }, REJECT_DISPLAY_MS)
+            }
         }
     }
 
     // ── Order generation ──────────────────────────────────────────────────────────
 
     private fun generateOrder(): OrderModel {
-        // Cycle through different "profiles" so every few orders covers edge cases
         val profile = orderCount % 6
         val (fare, tripKm, pickupKm) = when (profile) {
             0 -> Triple(randomFare(120.0, 300.0), randomKm(10.0, 25.0), randomKm(0.3, 2.0))  // high value, close
@@ -108,6 +112,26 @@ object MockOrderSimulator {
         val pickup = if (profile == 3) "天水圍站" else PICKUP_LOCATIONS.random()
         val dest   = if (profile == 4) "香港國際機場 1號客運大樓" else DEST_LOCATIONS.random()
 
+        val rawLog = buildString {
+            appendLine("═══ MOCK 模擬資料 ═══")
+            appendLine("車費解析:    HK\$${"%.1f".format(fare)}")
+            appendLine("行程距離:    ${"%.2f".format(tripKm)} km")
+            appendLine("接客距離:    ${"%.2f".format(pickupKm)} km")
+            appendLine("上車地點:    $pickup")
+            appendLine("目的地:      $dest")
+            appendLine("Profile:     #$profile (${profileName(profile)})")
+            appendLine("─── 模擬畫面文字節點 ───")
+            appendLine("[0] 新訂單")
+            appendLine("[1] HK\$${"%.1f".format(fare)}")
+            appendLine("[2] 行程距離 ${"%.1f".format(tripKm)} km")
+            appendLine("[3] 接客距離 ${"%.1f".format(pickupKm)} km")
+            appendLine("[4] 出發地")
+            appendLine("[5] $pickup")
+            appendLine("[6] 目的地")
+            appendLine("[7] $dest")
+            appendLine("[8] 接單")
+        }
+
         return OrderModel(
             id                 = UUID.randomUUID().toString(),
             fare               = fare,
@@ -115,8 +139,13 @@ object MockOrderSimulator {
             pickupDistanceKm   = pickupKm,
             pickupAddress      = pickup,
             destinationAddress = dest,
-            timestampMs        = System.currentTimeMillis()
+            timestampMs        = System.currentTimeMillis(),
+            rawLog             = rawLog
         )
+    }
+
+    private fun profileName(p: Int) = when (p) {
+        0 -> "高價近距"; 1 -> "低價近距"; 2 -> "中距"; 3 -> "遠接"; 4 -> "機場"; else -> "隨機"
     }
 
     private fun randomFare(min: Double, max: Double): Double =

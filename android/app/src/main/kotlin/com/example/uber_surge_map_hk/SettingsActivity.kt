@@ -40,6 +40,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun loadCurrentRules() {
         val r = vm.filterRules.value ?: FilterRules()
+        binding.switchDebugMode.isChecked = r.debugMode
         binding.etMinFare.setText(if (r.minFare > 0) r.minFare.toInt().toString() else "")
         binding.etMinFarePerKm.setText(if (r.minFarePerKm > 0) r.minFarePerKm.toInt().toString() else "")
         binding.etMaxPickupKm.setText(if (r.maxPickupKm > 0) r.maxPickupKm.toString() else "")
@@ -67,6 +68,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun saveAndFinish() {
         val rules = FilterRules(
             autoAcceptEnabled = vm.filterRules.value?.autoAcceptEnabled ?: false,
+            debugMode     = binding.switchDebugMode.isChecked,
             minFare       = binding.etMinFare.text?.toString()?.toDoubleOrNull() ?: 0.0,
             maxPickupKm   = binding.etMaxPickupKm.text?.toString()?.toDoubleOrNull() ?: 5.0,
             minTripKm     = binding.etMinTripKm.text?.toString()?.toDoubleOrNull() ?: 0.0,

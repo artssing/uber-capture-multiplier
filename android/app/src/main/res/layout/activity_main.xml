@@ -156,7 +156,39 @@
             android:focusable="true"/>
     </LinearLayout>
 
-    <!-- ===== CONTENT AREA (fills between mockBanner and bottomNav) ===== -->
+    <!-- ===== DEBUG MODE BANNER (shown when debugMode is enabled) ===== -->
+    <LinearLayout
+        android:id="@+id/debugBanner"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="#CC5500"
+        android:paddingVertical="5dp"
+        android:paddingHorizontal="12dp"
+        android:visibility="gone"
+        app:layout_constraintTop_toBottomOf="@id/mockBanner"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <ImageView
+            android:layout_width="14dp"
+            android:layout_height="14dp"
+            android:src="@drawable/ic_settings"
+            android:alpha="0.9"/>
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:text="除錯模式 — 訂單符合條件時將由您手動接單"
+            android:textColor="#FFFFFF"
+            android:textSize="11sp"
+            android:textStyle="bold"/>
+    </LinearLayout>
+
+    <!-- ===== CONTENT AREA (fills between banners and bottomNav) ===== -->
 
     <!-- DASHBOARD TAB -->
     <androidx.core.widget.NestedScrollView
@@ -164,7 +196,7 @@
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:overScrollMode="never"
-        app:layout_constraintTop_toBottomOf="@id/mockBanner"
+        app:layout_constraintTop_toBottomOf="@id/debugBanner"
         app:layout_constraintBottom_toTopOf="@id/bottomNav"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
@@ -231,7 +263,7 @@
         android:layout_height="0dp"
         android:orientation="vertical"
         android:visibility="gone"
-        app:layout_constraintTop_toBottomOf="@id/mockBanner"
+        app:layout_constraintTop_toBottomOf="@id/debugBanner"
         app:layout_constraintBottom_toTopOf="@id/bottomNav"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">

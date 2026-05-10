@@ -65,14 +65,12 @@ class OrderAccessibilityService : AccessibilityService() {
     private fun scanForOrder() {
         val root = rootInActiveWindow ?: return
         try {
-            // Quick check: does screen contain an accept button?
             val acceptBtn = findAcceptButton(root) ?: return
 
             val texts = mutableListOf<String>()
             collectTexts(root, texts)
             val fullText = texts.joinToString("\n")
 
-            // Require at least one order indicator
             val hasIndicator = ORDER_INDICATORS.any { fullText.contains(it) } ||
                     ACCEPT_BUTTON_TEXTS.any { fullText.contains(it) }
             if (!hasIndicator) return
@@ -86,14 +84,17 @@ class OrderAccessibilityService : AccessibilityService() {
             if (hash == lastOrderHash) return
             lastOrderHash = hash
 
+            val rawLog = buildRawLog(texts, fare, tripKm, pickupKm, pickup, dest)
+
             val order = OrderModel(
-                id                = UUID.randomUUID().toString(),
-                fare              = fare,
-                tripDistanceKm    = tripKm,
-                pickupDistanceKm  = pickupKm,
-                pickupAddress     = pickup,
+                id                 = UUID.randomUUID().toString(),
+                fare               = fare,
+                tripDistanceKm     = tripKm,
+                pickupDistanceKm   = pickupKm,
+                pickupAddress      = pickup,
                 destinationAddress = dest,
-                timestampMs       = System.currentTimeMillis()
+                timestampMs        = System.currentTimeMillis(),
+                rawLog             = rawLog
             )
 
             Log.d(TAG, "Order detected: HK$$fare, trip=${tripKm}km, pickup=${pickupKm}km")
@@ -101,17 +102,41 @@ class OrderAccessibilityService : AccessibilityService() {
             OrderRepository.onOrderDetected(order)
 
             val rules = OrderRepository.filterRules.value ?: return
-            if (rules.autoAcceptEnabled && rules.passes(order)) {
-                val delay = rules.acceptDelayMs.toLong()
-                mainHandler.postDelayed({
-                    if (!isProcessing.getAndSet(true)) {
-                        performAccept(acceptBtn, order)
-                    }
-                }, delay)
+            when {
+                rules.debugMode && rules.passes(order) -> {
+                    // Debug mode: alert user to manually accept, no auto-click
+                    Log.d(TAG, "Debug mode: order passes filter, awaiting manual accept")
+                    OrderRepository.onOrderAwaitingManualAccept(order)
+                }
+                !rules.debugMode && rules.autoAcceptEnabled && rules.passes(order) -> {
+                    val delay = rules.acceptDelayMs.toLong()
+                    mainHandler.postDelayed({
+                        if (!isProcessing.getAndSet(true)) {
+                            performAccept(acceptBtn, order)
+                        }
+                    }, delay)
+                }
             }
         } finally {
             root.recycle()
         }
+    }
+
+    // ── Raw log builder ───────────────────────────────────────────────────────
+
+    private fun buildRawLog(
+        texts: List<String>,
+        fare: Double, tripKm: Double, pickupKm: Double,
+        pickup: String, dest: String
+    ): String = buildString {
+        appendLine("═══ 原始擷取資料 ═══")
+        appendLine("車費解析:    HK\$${"%.1f".format(fare)}")
+        appendLine("行程距離:    ${"%.2f".format(tripKm)} km")
+        appendLine("接客距離:    ${"%.2f".format(pickupKm)} km")
+        appendLine("上車地點:    $pickup")
+        appendLine("目的地:      $dest")
+        appendLine("─── 畫面所有文字節點 ───")
+        texts.forEachIndexed { i, t -> appendLine("[$i] $t") }
     }
 
     // ── Node helpers ─────────────────────────────────────────────────────────
@@ -198,20 +223,14 @@ class OrderAccessibilityService : AccessibilityService() {
         for (p in patterns) {
             p.find(text)?.groupValues?.get(1)?.toDoubleOrNull()?.takeIf { it > 0 }?.let { return it }
         }
-        // Fallback: largest km value on screen
         return Regex("""([\d.]+)\s*(?:公里|km)""", RegexOption.IGNORE_CASE)
             .findAll(text).mapNotNull { it.groupValues[1].toDoubleOrNull() }
             .filter { it > 0 }.maxOrNull() ?: 0.0
     }
 
     private fun parsePickupDistance(text: String): Double {
-        val patterns = listOf(
-            Regex("""(?:接客|接乘|距您)[^0-9]*([\d.]+)\s*(?:公里|km)""", RegexOption.IGNORE_CASE),
-        )
-        for (p in patterns) {
-            p.find(text)?.groupValues?.get(1)?.toDoubleOrNull()?.takeIf { it > 0 }?.let { return it }
-        }
-        // meters variant
+        Regex("""(?:接客|接乘|距您)[^0-9]*([\d.]+)\s*(?:公里|km)""", RegexOption.IGNORE_CASE)
+            .find(text)?.groupValues?.get(1)?.toDoubleOrNull()?.takeIf { it > 0 }?.let { return it }
         Regex("""(?:接客|接乘|距您)[^0-9]*([\d.]+)\s*(?:米|m\b)""", RegexOption.IGNORE_CASE)
             .find(text)?.groupValues?.get(1)?.toDoubleOrNull()?.takeIf { it > 0 }?.let { return it / 1000.0 }
         return 0.0
@@ -228,7 +247,6 @@ class OrderAccessibilityService : AccessibilityService() {
             if (dest.isEmpty()   && destKws.any   { t.contains(it) } && next.length > 4) dest   = next
         }
 
-        // Fallback: longest non-keyword strings
         if (pickup.isEmpty() || dest.isEmpty()) {
             val candidates = texts.filter { s ->
                 s.length > 5 && ACCEPT_BUTTON_TEXTS.none { s == it } &&

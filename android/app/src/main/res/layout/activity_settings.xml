@@ -31,6 +31,41 @@
             android:orientation="vertical"
             android:padding="16dp">
 
+            <!-- ===== DEBUG MODE ===== -->
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="除錯模式" android:textColor="@color/text_tertiary"
+                android:textSize="12sp" android:textStyle="bold" android:letterSpacing="0.05"
+                android:layout_marginBottom="8dp"/>
+
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:background="@drawable/bg_card" android:padding="4dp"
+                android:layout_marginBottom="20dp">
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="horizontal" android:gravity="center_vertical"
+                    android:paddingHorizontal="14dp" android:paddingVertical="12dp">
+
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:orientation="vertical">
+
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:text="Debug Mode — 手動搶單"
+                            android:textColor="@color/text_primary" android:textSize="14sp"/>
+
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="符合條件時彈出確認，由您親手接單，不自動點擊"
+                            android:textColor="@color/text_disabled" android:textSize="11sp"/>
+                    </LinearLayout>
+
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/switchDebugMode"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="12dp"/>
+                </LinearLayout>
+            </LinearLayout>
+
             <!-- ===== FARE CONDITIONS ===== -->
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:text="車費條件" android:textColor="@color/text_tertiary"

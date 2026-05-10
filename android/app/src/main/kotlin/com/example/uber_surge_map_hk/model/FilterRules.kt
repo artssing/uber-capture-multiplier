@@ -2,6 +2,7 @@ package com.example.uber_surge_map_hk.model
 
 data class FilterRules(
     var autoAcceptEnabled: Boolean = false,
+    var debugMode: Boolean = false,
     var minFare: Double = 0.0,
     var maxPickupKm: Double = 5.0,
     var minTripKm: Double = 0.0,

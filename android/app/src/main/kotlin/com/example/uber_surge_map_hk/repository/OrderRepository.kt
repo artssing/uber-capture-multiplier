@@ -10,8 +10,17 @@ import com.example.uber_surge_map_hk.model.OrderResult
 object OrderRepository {
 
     val DEFAULT_PACKAGES = listOf(
+        // 高德地圖主程序（高德車主司機端內建於此 App）
+        "com.autonavi.minimap",
+        // 部分地區獨立司機端（若存在）
         "com.autonavi.amap.driver",
-        "com.amap.android.driver"
+        "com.amap.android.driver",
+        // 花小猪打車司機端（使用高德聚合平台）
+        "com.huaxiaozhu.driver",
+        // 曹操出行司機端（使用高德聚合平台）
+        "cn.caocaokeji.dcdriver",
+        // 哈囉車主 / 順風車司機端
+        "com.hellobike.majia"
     )
 
     // ── Live data observed by UI ─────────────────────────────────────────────

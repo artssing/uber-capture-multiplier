@@ -10,38 +10,8 @@ import com.example.uber_surge_map_hk.model.OrderResult
 object OrderRepository {
 
     val DEFAULT_PACKAGES = listOf(
-        // ── 香港網約車 / 的士平台（確認在港上線）────────────────────────────
-        // OKGO 可以出發（香港網約車司機專用，聚合高德打車訂單）
-        "www.okgo.sj",
-        // Uber 司機版
-        "com.ubercab.driver",
-        // DiDi 司機版（香港專版）
-        "com.sdu.didi.gsui.hk",
-        // 飛的 FlyTaxi 司機版
-        "com.flytaxi",
-        // DASH 司機版
-        "com.dash.driver.production",
-        // 的神 God Taxi 司機版
-        "com.madmadgroup.godtaxi.driver",
-        // TADA Driver（2024年底進入香港）
-        "io.mvlchain.tada.driver",
-        // GoGoX Partner（前GOGOVAN司機）
-        "hk.gogovan.GoGoDriver",
-        // JOIE 樂行司機版（2025年新電動的士車隊）
-        "com.socif.joie.driverapp",
-        // BigBoss Taxi BOSS司機
-        "cn.heycars.travel.driver.bigboss",
-        // HKTaxiGo 司機助理
-        "com.m1os.da",
-        // 宇宙出行（香港司機版）
-        "hkyuzhouchuxing.driver.xianggang",
-        // OKTaxi 的士司機車隊平台
-        "taxi.ok.driver",
-        // OK的士 OK Supertrans 司機版
-        "net.oktaxi.m",
-        // ── 高德地圖（OKGO 聚合平台底層 App）──────────────────────────────
-        "com.autonavi.minimap",
-        "com.autonavi.amapauto"
+        // OKGO 可以出發（香港網約車司機專用）
+        "www.okgo.sj"
     )
 
     // ── Live data observed by UI ─────────────────────────────────────────────

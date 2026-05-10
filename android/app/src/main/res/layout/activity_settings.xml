@@ -274,7 +274,7 @@
 
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
-                android:text="常見套件名：\n高德地圖（含司機端）:\n  com.autonavi.minimap\n高德地圖車機版:\n  com.autonavi.amapauto\n高德司機端（備用）:\n  com.autonavi.amap.driver\n花小猪司機端:\n  com.huaxiaozhu.driver\n曹操出行司機端:\n  cn.caocaokeji.dcdriver\n哈囉車主:\n  com.hellobike.majia"
+                android:text="香港常見司機App套件名：\nOKGO 可以出發: www.okgo.sj\nUber 司機版: com.ubercab.driver\nDiDi 司機版(港): com.sdu.didi.gsui.hk\n飛的 FlyTaxi: com.flytaxi\nDASH 司機版: com.dash.driver.production\n的神 God Taxi: com.madmadgroup.godtaxi.driver\nTADA Driver: io.mvlchain.tada.driver\nGoGoX Partner: hk.gogovan.GoGoDriver\nJOIE 樂行司機: com.socif.joie.driverapp\nBigBoss Taxi: cn.heycars.travel.driver.bigboss\nHKTaxiGo 司機助理: com.m1os.da\n宇宙出行(港): hkyuzhouchuxing.driver.xianggang\nOKTaxi 車隊: taxi.ok.driver\nOK的士: net.oktaxi.m\n高德地圖: com.autonavi.minimap"
                 android:textColor="@color/text_disabled" android:textSize="12sp"
                 android:lineSpacingExtra="3dp"/>
 

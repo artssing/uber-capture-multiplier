@@ -23,8 +23,10 @@ import java.util.UUID
  */
 object OkgoLogcatMonitor {
 
-    private const val TAG = "OkgoLogcat"
+    private const val TAG     = "OkgoLogcat"
+    private const val TAG_RAW = "OkgoRaw"        // full OKGO JSON, for diff comparison
     private const val READ_LOGS = "android.permission.READ_LOGS"
+    private const val LOG_CHUNK = 3800            // Android logcat line limit ~4000
 
     @Volatile private var running = false
     private var readerThread: Thread? = null
@@ -84,6 +86,21 @@ object OkgoLogcatMonitor {
         }
     }
 
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /** Log strings longer than Android's ~4000-char limit by splitting into chunks. */
+    private fun logLong(tag: String, msg: String) {
+        var offset = 0
+        val total = msg.length
+        var part = 1
+        while (offset < total) {
+            val end = minOf(offset + LOG_CHUNK, total)
+            Log.d(tag, "[${part}] ${msg.substring(offset, end)}")
+            offset = end
+            part++
+        }
+    }
+
     // ── Order parsing ─────────────────────────────────────────────────────────
 
     private fun parseOrderLine(line: String) {
@@ -102,22 +119,40 @@ object OkgoLogcatMonitor {
             if (orderId == lastOrderId) return   // already processed
             lastOrderId = orderId
 
+            // ── Log raw OKGO JSON for comparison ──────────────────────────────
+            Log.d(TAG_RAW, "══════════ OKGO grabResultPush [orderId=$orderId] ══════════")
+            logLong(TAG_RAW, jsonStr)
+            Log.d(TAG_RAW, "══════════ END ══════════")
+
             val fare = obj.optDouble("driverOrderPrice", 0.0)
 
             // mileage is pickup distance in metres; duration is ETA in minutes
             var pickupKm = 0.0
             var etaMinutes = 0
+            var mileageRawM = 0.0
             runCatching {
                 val matchMap = obj.getJSONObject("matchInfoMap")
                 val driverId = matchMap.keys().next()
                 val dir = matchMap.getJSONObject(driverId).getJSONObject("driverDirection")
-                pickupKm = dir.getDouble("mileage") / 1000.0
+                mileageRawM = dir.getDouble("mileage")
+                pickupKm = mileageRawM / 1000.0
                 etaMinutes = dir.optInt("duration", 0)
             }
 
             val mainTag = runCatching {
                 obj.getJSONArray("mainTag").optString(0, "")
             }.getOrDefault("")
+
+            // ── Log parsed fields so user can compare against OkgoRaw ─────────
+            Log.d(TAG, "══════════ 解析結果 [orderId=$orderId] ══════════")
+            Log.d(TAG, "driverOrderPrice (原始)  = ${obj.optDouble("driverOrderPrice", 0.0)} HKD")
+            Log.d(TAG, "車費 (app顯示)           = HK\$${"%.2f".format(fare)}")
+            Log.d(TAG, "mileage (原始,metre)     = $mileageRawM m")
+            Log.d(TAG, "接客距離 (app顯示)        = ${"%.3f".format(pickupKm)} km")
+            Log.d(TAG, "duration (原始,秒/分鐘)  = $etaMinutes")
+            Log.d(TAG, "接客預計 (app顯示)        = ${etaMinutes} 分鐘")
+            Log.d(TAG, "訂單類型 mainTag         = ${mainTag.ifEmpty { "(空)" }}")
+            Log.d(TAG, "══════════ END ══════════")
 
             val rawLog = buildString {
                 appendLine("═══ OKGO logcat 訂單 ═══")
@@ -141,7 +176,6 @@ object OkgoLogcatMonitor {
                 rawLog             = rawLog
             )
 
-            Log.d(TAG, "Order: HK\$$fare, pickup=${pickupKm}km, eta=${etaMinutes}min [id=$orderId]")
             OrderRepository.onOrderDetected(order)
 
             val rules = OrderRepository.filterRules.value ?: return
